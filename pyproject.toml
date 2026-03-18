@@ -1,6 +1,6 @@
 [project]
 name = "datasette-user-profiles"
-version = "0.1a1"
+version = "0.1.0a1"
 description = "Plugin to allow users to define their own profiles"
 readme = "README.md"
 authors = [{name = "Alex Garcia"}]
