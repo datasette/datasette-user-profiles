@@ -1,0 +1,51 @@
+{
+  "_legacy-Dspj-ZO2.js": {
+    "file": "static/gen/legacy-Dspj-ZO2.js",
+    "name": "legacy",
+    "imports": [
+      "_load-CPo8yAZp.js"
+    ]
+  },
+  "_load-CPo8yAZp.js": {
+    "file": "static/gen/load-CPo8yAZp.js",
+    "name": "load"
+  },
+  "src/pages/edit_profile/index.ts": {
+    "file": "static/gen/edit_profile-Civ2KLpl.js",
+    "name": "edit_profile",
+    "src": "src/pages/edit_profile/index.ts",
+    "isEntry": true,
+    "imports": [
+      "_load-CPo8yAZp.js"
+    ],
+    "css": [
+      "static/gen/edit_profile-Cty2KDck.css"
+    ]
+  },
+  "src/pages/profile/index.ts": {
+    "file": "static/gen/profile-BrxzLgYz.js",
+    "name": "profile",
+    "src": "src/pages/profile/index.ts",
+    "isEntry": true,
+    "imports": [
+      "_load-CPo8yAZp.js",
+      "_legacy-Dspj-ZO2.js"
+    ],
+    "css": [
+      "static/gen/profile-3fTq03FC.css"
+    ]
+  },
+  "src/pages/profiles/index.ts": {
+    "file": "static/gen/profiles-BfX8JVXm.js",
+    "name": "profiles",
+    "src": "src/pages/profiles/index.ts",
+    "isEntry": true,
+    "imports": [
+      "_load-CPo8yAZp.js",
+      "_legacy-Dspj-ZO2.js"
+    ],
+    "css": [
+      "static/gen/profiles-BReYQCCe.css"
+    ]
+  }
+}
