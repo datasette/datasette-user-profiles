@@ -127,6 +127,7 @@ def _collect_sections(datasette) -> list[ProfileSectionData]:
                         js_urls=s.all_js_urls(),
                         css_urls=s.all_css_urls(),
                         sort_order=s.sort_order,
+                        icon=s.icon,
                     )
                 )
     sections.sort(key=lambda s: s.sort_order)

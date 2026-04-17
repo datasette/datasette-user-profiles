@@ -20,6 +20,7 @@ class ProfileSectionData(BaseModel):
     js_urls: list[str] = []
     css_urls: list[str] = []
     sort_order: int = 100
+    icon: str | None = None
 
 
 # /-/profile/<actor_id> — public profile view

@@ -70,6 +70,9 @@
       {#each sections as section (section.id)}
         <div class="profile-section">
           <h2>
+            {#if section.icon}
+              <span class="section-icon">{@html section.icon}</span>
+            {/if}
             {section.label}
           </h2>
           <div class="section-content">

@@ -15,7 +15,8 @@ class ProfileSection:
     js_urls: list[str] = field(default_factory=list)  # multiple JS URLs (e.g. vite client + entry)
     css_url: str | None = None
     css_urls: list[str] = field(default_factory=list)
-    sort_order: int = 100  # lower = higher on page
+    sort_order: int = 100
+    icon: str | None = None  # raw SVG markup to render next to the section heading  # lower = higher on page
 
     def all_js_urls(self) -> list[str]:
         urls = list(self.js_urls)
