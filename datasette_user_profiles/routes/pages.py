@@ -97,6 +97,8 @@ async def profiles_page(datasette, request):
     ]
 
     current_actor_id = request.actor.get("id") if request.actor else None
+    if current_actor_id is not None:
+        current_actor_id = str(current_actor_id)
 
     return await render_page(
         datasette,
@@ -139,6 +141,8 @@ def _collect_sections(datasette) -> list[ProfileSectionData]:
 async def profile_page(datasette, request, actor_id: str):
     profile = await get_profile(datasette, actor_id)
     current_actor_id = request.actor.get("id") if request.actor else None
+    if current_actor_id is not None:
+        current_actor_id = str(current_actor_id)
     is_own = current_actor_id == actor_id
 
     sections = _collect_sections(datasette)
@@ -208,6 +212,7 @@ async def edit_profile_page(datasette, request):
     actor_id = request.actor.get("id")
     if not actor_id:
         return Response.text("Actor has no id", status=403)
+    actor_id = str(actor_id)
 
     from ..avatar import AVATAR_ICONS, AVATAR_COLORS
 

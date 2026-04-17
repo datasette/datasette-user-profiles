@@ -30,6 +30,7 @@ async def api_update_profile(
             UpdateProfileResponse(ok=False, error="Actor has no id").model_dump(),
             status=403,
         )
+    actor_id = str(actor_id)
 
     internal_db = datasette.get_internal_database()
 
@@ -71,6 +72,7 @@ async def api_upload_photo(
             UploadPhotoResponse(ok=False, error="Actor has no id").model_dump(),
             status=403,
         )
+    actor_id = str(actor_id)
 
     try:
         photo_bytes = base64.b64decode(body.photo_data)
@@ -128,6 +130,7 @@ async def api_delete_photo(datasette, request):
             DeletePhotoResponse(ok=False, error="Actor has no id").model_dump(),
             status=403,
         )
+    actor_id = str(actor_id)
 
     internal_db = datasette.get_internal_database()
     await internal_db.execute_write(

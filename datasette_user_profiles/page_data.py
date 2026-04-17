@@ -1,7 +1,9 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class UserProfile(BaseModel):
+    model_config = ConfigDict(coerce_numbers_to_str=True)
+
     actor_id: str
     display_name: str | None = None
     bio: str | None = None
