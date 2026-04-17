@@ -10,6 +10,8 @@ export type DisplayName = string | null;
 export type Bio = string | null;
 export type Email = string | null;
 export type HasPhoto = boolean;
+export type AvatarIcon = string | null;
+export type AvatarColor = string | null;
 export type CreatedAt = string | null;
 export type UpdatedAt = string | null;
 export type Profiles = UserProfile[];
@@ -28,6 +30,8 @@ export interface UserProfile {
   bio?: Bio;
   email?: Email;
   has_photo?: HasPhoto;
+  avatar_icon?: AvatarIcon;
+  avatar_color?: AvatarColor;
   created_at?: CreatedAt;
   updated_at?: UpdatedAt;
   [k: string]: unknown;

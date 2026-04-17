@@ -17,9 +17,9 @@
         <li class="profile-card">
           <a href="/-/profile/{encodeURIComponent(profile.actor_id)}" class="profile-link">
             <div class="avatar">
-              {#if profile.has_photo}
+              {#if profile.has_photo || (profile.avatar_icon && profile.avatar_color)}
                 <img
-                  src="/-/api/user-profile/photo/{encodeURIComponent(profile.actor_id)}"
+                  src="/-/profile/pic/{encodeURIComponent(profile.actor_id)}"
                   alt={profile.display_name || profile.actor_id}
                   class="avatar-img"
                 />

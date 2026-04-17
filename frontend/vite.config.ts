@@ -17,12 +17,10 @@ async function compileSchemaFile(file: string) {
 // https://vite.dev/config/
 export default defineConfig({
   server: {
-    port: 5181,
     strictPort: true,
     cors: true,
     hmr: {
       host: "localhost",
-      port: 5181,
       protocol: "ws",
     },
   },

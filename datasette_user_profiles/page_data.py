@@ -7,19 +7,34 @@ class UserProfile(BaseModel):
     bio: str | None = None
     email: str | None = None
     has_photo: bool = False
+    avatar_icon: str | None = None
+    avatar_color: str | None = None
     created_at: str | None = None
     updated_at: str | None = None
+
+
+class ProfileSectionData(BaseModel):
+    id: str
+    label: str
+    tag_name: str
+    js_urls: list[str] = []
+    css_urls: list[str] = []
+    sort_order: int = 100
 
 
 # /-/profile/<actor_id> — public profile view
 class ProfilePageData(BaseModel):
     profile: UserProfile
     is_own_profile: bool = False
+    sections: list[ProfileSectionData] = []
 
 
 # /-/user-profile/edit — edit your own profile
 class EditProfilePageData(BaseModel):
     profile: UserProfile
+    avatar_icon_choices: list[str] = []
+    avatar_color_choices: dict[str, str] = {}
+    avatar_icon_svgs: dict[str, str] = {}
 
 
 # /-/profiles/ — list all profiles
@@ -35,6 +50,8 @@ class UpdateProfileRequest(BaseModel):
     display_name: str | None = None
     bio: str | None = None
     email: str | None = None
+    avatar_icon: str | None = None
+    avatar_color: str | None = None
 
 
 class UpdateProfileResponse(BaseModel):
@@ -61,4 +78,5 @@ __exports__ = [
     ProfilePageData,
     EditProfilePageData,
     ProfilesPageData,
+    ProfileSectionData,
 ]

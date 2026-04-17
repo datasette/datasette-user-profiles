@@ -43,7 +43,7 @@ asyncio_mode = "strict"
 asyncio_default_fixture_loop_scope = "function"
 
 [tool.setuptools.package-data]
-datasette_user_profiles = ["static/**/*", "templates/*", "manifest.json"]
+datasette_user_profiles = ["static/**/*", "templates/*", "manifest.json", "icons/*.svg"]
 
 [tool.setuptools.packages.find]
 exclude = [

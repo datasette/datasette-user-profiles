@@ -19,7 +19,7 @@ types-watch:
     --clear -- \
       just types
 
-DEV_PORT := "5181"
+DEV_PORT := "5182"
 
 # Frontend building
 frontend *flags:
@@ -66,6 +66,7 @@ dev *flags:
       --with datasette-debug-gotham \
       datasette \
         -s permissions.profile_access.id "*" \
+        --plugins-dir=sample \
         -p 8006 {{flags}}
 
 dev-with-hmr *flags:

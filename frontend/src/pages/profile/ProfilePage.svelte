@@ -5,18 +5,36 @@
   const pageData = loadPageData<ProfilePageData>();
   const profile = pageData.profile;
   const isOwn = pageData.is_own_profile;
+  const sections = pageData.sections || [];
 
-  const photoUrl = profile.has_photo
-    ? `/-/api/user-profile/photo/${encodeURIComponent(profile.actor_id)}`
+  const hasAvatar = profile.has_photo || (profile.avatar_icon && profile.avatar_color);
+  const avatarUrl = hasAvatar
+    ? `/-/profile/pic/${encodeURIComponent(profile.actor_id)}`
     : null;
+
+  // Dynamically load JS/CSS for each plugin section
+  sections.forEach((section) => {
+    for (const cssUrl of section.css_urls || []) {
+      const link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = cssUrl;
+      document.head.appendChild(link);
+    }
+    for (const jsUrl of section.js_urls || []) {
+      const script = document.createElement("script");
+      script.src = jsUrl;
+      script.type = "module";
+      document.head.appendChild(script);
+    }
+  });
 </script>
 
 <main>
   <div class="profile-header">
     <div class="header-left">
       <div class="avatar">
-        {#if photoUrl}
-          <img src={photoUrl} alt="{profile.display_name || profile.actor_id}" class="avatar-img" />
+        {#if avatarUrl}
+          <img src={avatarUrl} alt="{profile.display_name || profile.actor_id}" class="avatar-img" />
         {:else}
           <div class="avatar-placeholder">
             {(profile.display_name || profile.actor_id).charAt(0).toUpperCase()}
@@ -44,6 +62,22 @@
   {#if profile.email}
     <div class="email">
       <a href="mailto:{profile.email}">{profile.email}</a>
+    </div>
+  {/if}
+
+  {#if sections.length > 0}
+    <div class="profile-sections">
+      {#each sections as section (section.id)}
+        <div class="profile-section">
+          <h2>
+            {section.label}
+          </h2>
+          <div class="section-content">
+            <!-- Web component rendered dynamically -->
+            {@html `<${section.tag_name} actor-id="${profile.actor_id}" is-own-profile="${isOwn}"></${section.tag_name}>`}
+          </div>
+        </div>
+      {/each}
     </div>
   {/if}
 
@@ -117,6 +151,28 @@
   .email {
     margin-bottom: 1rem;
     font-size: 0.9rem;
+  }
+  .profile-sections {
+    margin-top: 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+  .profile-section h2 {
+    font-size: 1.1rem;
+    margin: 0 0 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .section-icon {
+    display: inline-flex;
+    width: 18px;
+    height: 18px;
+  }
+  :global(.section-icon svg) {
+    width: 18px;
+    height: 18px;
   }
   .actions {
     margin-top: 1.5rem;

@@ -24,3 +24,11 @@ def m001_initial(db: Database):
             CHECK (length(photo) <= 1048576)
         );
     """)
+
+
+@internal_migrations()
+def m002_avatar_icon_color(db: Database):
+    db.executescript("""
+        ALTER TABLE datasette_user_profiles ADD COLUMN avatar_icon TEXT;
+        ALTER TABLE datasette_user_profiles ADD COLUMN avatar_color TEXT;
+    """)

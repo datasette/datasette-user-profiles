@@ -17,5 +17,6 @@ node_modules
 
 
 datasette_user_profiles/static/gen/*
+datasette_user_profiles/manifest.json
 
 *_schema.json

@@ -10,11 +10,17 @@ export type DisplayName = string | null;
 export type Bio = string | null;
 export type Email = string | null;
 export type HasPhoto = boolean;
+export type AvatarIcon = string | null;
+export type AvatarColor = string | null;
 export type CreatedAt = string | null;
 export type UpdatedAt = string | null;
+export type AvatarIconChoices = string[];
 
 export interface EditProfilePageData {
   profile: UserProfile;
+  avatar_icon_choices?: AvatarIconChoices;
+  avatar_color_choices?: AvatarColorChoices;
+  avatar_icon_svgs?: AvatarIconSvgs;
   [k: string]: unknown;
 }
 export interface UserProfile {
@@ -23,7 +29,15 @@ export interface UserProfile {
   bio?: Bio;
   email?: Email;
   has_photo?: HasPhoto;
+  avatar_icon?: AvatarIcon;
+  avatar_color?: AvatarColor;
   created_at?: CreatedAt;
   updated_at?: UpdatedAt;
   [k: string]: unknown;
+}
+export interface AvatarColorChoices {
+  [k: string]: string;
+}
+export interface AvatarIconSvgs {
+  [k: string]: string;
 }

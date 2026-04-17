@@ -10,13 +10,24 @@ export type DisplayName = string | null;
 export type Bio = string | null;
 export type Email = string | null;
 export type HasPhoto = boolean;
+export type AvatarIcon = string | null;
+export type AvatarColor = string | null;
 export type CreatedAt = string | null;
 export type UpdatedAt = string | null;
 export type IsOwnProfile = boolean;
+export type Id = string;
+export type Label = string;
+export type TagName = string;
+export type JsUrls = string[];
+export type CssUrls = string[];
+export type SortOrder = number;
+export type Icon = string;
+export type Sections = ProfileSectionData[];
 
 export interface ProfilePageData {
   profile: UserProfile;
   is_own_profile?: IsOwnProfile;
+  sections?: Sections;
   [k: string]: unknown;
 }
 export interface UserProfile {
@@ -25,7 +36,19 @@ export interface UserProfile {
   bio?: Bio;
   email?: Email;
   has_photo?: HasPhoto;
+  avatar_icon?: AvatarIcon;
+  avatar_color?: AvatarColor;
   created_at?: CreatedAt;
   updated_at?: UpdatedAt;
+  [k: string]: unknown;
+}
+export interface ProfileSectionData {
+  id: Id;
+  label: Label;
+  tag_name: TagName;
+  js_urls?: JsUrls;
+  css_urls?: CssUrls;
+  sort_order?: SortOrder;
+  icon?: Icon;
   [k: string]: unknown;
 }

@@ -15,6 +15,59 @@
   let error: string | null = $state(null);
   let success: string | null = $state(null);
 
+  const iconChoices = pageData.avatar_icon_choices ?? [];
+  const colorChoices = pageData.avatar_color_choices ?? {};
+  const colorEntries = Object.entries(colorChoices);
+  const iconSvgs = pageData.avatar_icon_svgs ?? {};
+  let avatarIcon = $state(profile.avatar_icon ?? "");
+  let avatarColor = $state(profile.avatar_color ?? "");
+  let pickerOpen = $state(false);
+  let anchorEl: HTMLDivElement;
+
+  function openPicker() {
+    if (pickerOpen) { pickerOpen = false; return; }
+    if (!avatarIcon && iconChoices.length) {
+      avatarIcon = iconChoices[0]!;
+    }
+    if (!avatarColor && colorEntries.length) {
+      const idx = Math.floor(Math.random() * Math.min(4, colorEntries.length));
+      avatarColor = colorEntries[idx]![1];
+    }
+    pickerOpen = true;
+  }
+
+  function onClickOutside(e: MouseEvent) {
+    if (pickerOpen && anchorEl && !anchorEl.contains(e.target as Node)) {
+      pickerOpen = false;
+    }
+  }
+
+  function onKeydown(e: KeyboardEvent) {
+    if (e.key === "Escape" && pickerOpen) {
+      pickerOpen = false;
+    }
+  }
+
+  $effect(() => {
+    if (pickerOpen) {
+      document.addEventListener("click", onClickOutside, true);
+      document.addEventListener("keydown", onKeydown);
+      return () => {
+        document.removeEventListener("click", onClickOutside, true);
+        document.removeEventListener("keydown", onKeydown);
+      };
+    }
+  });
+
+  function makeIconSvg(name: string, color: string, size: number = 40): string {
+    const inner = iconSvgs[name];
+    if (!inner || !color) return "";
+    const iconSize = size * 0.5625;
+    const offset = (size - iconSize) / 2;
+    const scale = iconSize / 16;
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><circle cx="${size / 2}" cy="${size / 2}" r="${size / 2}" fill="${color}"/><g transform="translate(${offset.toFixed(1)},${offset.toFixed(1)}) scale(${scale.toFixed(4)})" fill="white">${inner}</g></svg>`;
+  }
+
   let hasPhoto = $state(profile.has_photo);
   let selectedFile: File | null = $state(null);
   let photoPreview: string | null = $state(
@@ -148,6 +201,8 @@
             display_name: displayName || null,
             bio: bio || null,
             email: email || null,
+            avatar_icon: avatarIcon || null,
+            avatar_color: avatarColor || null,
           } as any,
         },
       );
@@ -183,7 +238,7 @@
     <div class="photo-section-inner">
       <div class="photo-info">
         <h2>Profile Photo</h2>
-        <p class="hint">Drag/drop, or paste new image.<br/>1MB max, JPG, PNG, or GIF</p>
+        <p class="hint">Drag/drop, or paste an image.<br/>1MB max, JPG, PNG, or GIF</p>
         <div class="photo-actions">
           <label class="file-btn">
             {hasPhoto || selectedFile ? "Change photo" : "Upload photo"}
@@ -201,25 +256,71 @@
         </div>
       </div>
       <div class="photo-preview-area">
-        {#if photoPreview}
-          <img src={photoPreview} alt="{profile.display_name || profile.actor_id}" class="photo-preview" />
-        {:else}
-          <div class="photo-placeholder">
-            {(profile.display_name || profile.actor_id).charAt(0).toUpperCase()}
-          </div>
-        {/if}
-        {#if hasPhoto && !selectedFile}
-          <button
-            type="button"
-            onclick={deletePhoto}
-            disabled={saving}
-            class="remove-btn"
-          >
-            Remove
+        <div class="avatar-anchor" bind:this={anchorEl}>
+          {#if photoPreview}
+            <img src={photoPreview} alt="{profile.display_name || profile.actor_id}" class="photo-preview" />
+          {:else if avatarIcon && avatarColor}
+            <div class="avatar-icon-preview">
+              {@html makeIconSvg(avatarIcon, avatarColor, 80)}
+            </div>
+          {:else}
+            <div class="photo-placeholder">
+              {(profile.display_name || profile.actor_id).charAt(0).toUpperCase()}
+            </div>
+          {/if}
+
+          {#if pickerOpen}
+            <div class="icon-picker-popover">
+              <div class="icon-grid">
+                {#each iconChoices as name}
+                  <button
+                    type="button"
+                    class="icon-btn"
+                    class:selected={avatarIcon === name}
+                    onclick={() => { avatarIcon = name; if (!avatarColor) avatarColor = colorEntries[0]?.[1] ?? ""; }}
+                    title={name}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 16 16" fill="currentColor">
+                      {@html iconSvgs[name]}
+                    </svg>
+                  </button>
+                {/each}
+              </div>
+
+              <div class="color-row">
+                {#each colorEntries as [name, hex]}
+                  <button
+                    type="button"
+                    class="color-btn"
+                    class:selected={avatarColor === hex}
+                    style="background: {hex};"
+                    onclick={() => { avatarColor = hex; if (!avatarIcon) avatarIcon = iconChoices[0] ?? ""; }}
+                    title={name}
+                  ></button>
+                {/each}
+              </div>
+
+              {#if avatarIcon || avatarColor}
+                <div class="picker-footer">
+                  <button type="button" class="clear-icon-btn" onclick={() => { avatarIcon = ""; avatarColor = ""; pickerOpen = false; }}>
+                    Clear
+                  </button>
+                </div>
+              {/if}
+            </div>
+          {/if}
+        </div>
+        <div class="below-avatar">
+          {#if hasPhoto && !selectedFile}
+            <button type="button" onclick={deletePhoto} disabled={saving} class="remove-btn">Remove</button>
+          {/if}
+          <button type="button" class="icon-picker-toggle" onclick={openPicker}>
+            {avatarIcon ? "Change icon" : "Choose icon"}
           </button>
-        {/if}
+        </div>
       </div>
     </div>
+
     {#if photoError}
       <p class="error">{photoError}</p>
     {/if}
@@ -282,7 +383,7 @@
   }
   .photo-section-inner {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: space-between;
     gap: 1.5rem;
   }
@@ -302,6 +403,10 @@
     border-radius: 50%;
     object-fit: cover;
   }
+  .avatar-icon-preview :global(svg) {
+    border-radius: 50%;
+    display: block;
+  }
   .photo-placeholder {
     width: 80px;
     height: 80px;
@@ -313,6 +418,12 @@
     font-size: 2rem;
     font-weight: 600;
     color: #666;
+  }
+  .below-avatar {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.15rem;
   }
   .photo-actions {
     display: flex;
@@ -353,11 +464,102 @@
   .remove-btn:hover {
     text-decoration: underline;
   }
+  .icon-picker-toggle {
+    font-size: 0.75rem;
+    color: #4a90d9;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+  }
+  .icon-picker-toggle:hover {
+    text-decoration: underline;
+  }
   .hint {
     font-size: 0.8rem;
     color: #888;
     margin: 0.25rem 0 0;
     line-height: 1.4;
+  }
+
+  .avatar-anchor {
+    position: relative;
+  }
+  .icon-picker-popover {
+    position: absolute;
+    top: calc(100% + 0.5rem);
+    right: 50%;
+    transform: translateX(50%);
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 0.75rem;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    z-index: 10;
+    width: max-content;
+  }
+  .icon-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 36px);
+    gap: 4px;
+    margin-bottom: 0.75rem;
+  }
+  .icon-btn {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid transparent;
+    border-radius: 6px;
+    background: white;
+    cursor: pointer;
+    color: #555;
+    padding: 0;
+  }
+  .icon-btn:hover {
+    background: #eee;
+  }
+  .icon-btn.selected {
+    border-color: #333;
+    background: #e8e8e8;
+  }
+  .color-row {
+    display: grid;
+    grid-template-columns: repeat(4, 28px);
+    gap: 4px;
+    justify-content: center;
+  }
+  .color-btn {
+    width: 28px;
+    height: 28px;
+    border: 2px solid transparent;
+    border-radius: 50%;
+    cursor: pointer;
+    padding: 0;
+  }
+  .color-btn:hover {
+    opacity: 0.8;
+  }
+  .color-btn.selected {
+    border-color: #333;
+    box-shadow: 0 0 0 2px white, 0 0 0 4px #333;
+  }
+  .picker-footer {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 0.4rem;
+  }
+  .clear-icon-btn {
+    font-size: 0.75rem;
+    color: #c00;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+  }
+  .clear-icon-btn:hover {
+    text-decoration: underline;
   }
 
   form {

@@ -1,7 +1,12 @@
 from datasette import hookimpl
 from datasette.permissions import Action
+from datasette.plugins import pm
 from datasette_vite import vite_entry
 import os
+
+from . import hookspecs
+
+pm.add_hookspecs(hookspecs)
 
 # Import route modules to trigger route registration on the shared router
 from .routes import pages, api
@@ -62,8 +67,8 @@ def startup(datasette):
         from sqlite_utils import Database as SqliteUtilsDatabase
         from .internal_migrations import internal_migrations
 
-        def migrate(connection):
-            db = SqliteUtilsDatabase(connection)
+        def migrate(conn):
+            db = SqliteUtilsDatabase(conn)
             internal_migrations.apply(db)
 
         await datasette.get_internal_database().execute_write_fn(migrate)

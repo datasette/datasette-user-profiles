@@ -38,15 +38,17 @@ async def api_update_profile(
             # Upsert the profile
             conn.execute(
                 """
-                INSERT INTO datasette_user_profiles (actor_id, display_name, bio, email)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO datasette_user_profiles (actor_id, display_name, bio, email, avatar_icon, avatar_color)
+                VALUES (?, ?, ?, ?, ?, ?)
                 ON CONFLICT(actor_id) DO UPDATE SET
                     display_name = excluded.display_name,
                     bio = excluded.bio,
                     email = excluded.email,
+                    avatar_icon = excluded.avatar_icon,
+                    avatar_color = excluded.avatar_color,
                     updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now')
                 """,
-                [actor_id, body.display_name, body.bio, body.email],
+                [actor_id, body.display_name, body.bio, body.email, body.avatar_icon, body.avatar_color],
             )
 
     await internal_db.execute_write_fn(write)
