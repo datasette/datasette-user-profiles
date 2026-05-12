@@ -2,7 +2,6 @@ from datasette import hookimpl
 from datasette.permissions import Action
 from datasette.plugins import pm
 from datasette_vite import vite_entry
-import os
 
 from . import hookspecs
 
@@ -25,7 +24,6 @@ def extra_template_vars(datasette):
     entry = vite_entry(
         datasette=datasette,
         plugin_package="datasette_user_profiles",
-        vite_dev_path=os.environ.get("DATASETTE_USER_PROFILES_VITE_PATH"),
     )
     return {"datasette_user_profiles_vite_entry": entry}
 
