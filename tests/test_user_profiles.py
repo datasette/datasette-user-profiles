@@ -1,4 +1,6 @@
+from datasette import hookimpl
 from datasette.app import Datasette
+from datasette.plugins import pm
 import pytest
 
 
@@ -161,3 +163,111 @@ async def test_search_forbidden_actor_blocked():
         "/-/profiles/api/search", cookies=_cookie(ds, "bob")
     )
     assert response.status_code == 403
+
+
+# --- actors_from_ids + datasette_resolve_actors sub-hook ---
+
+
+@pytest.mark.asyncio
+async def test_actors_from_ids_resolves_users_and_defaults_unknown():
+    ds = await _make_datasette()
+    actors = await ds.actors_from_ids(["alice", "bob", "ghost"])
+    assert actors["alice"] == {
+        "id": "alice",
+        "display_name": "Alice Anderson",
+        "email": "alice@example.com",
+        "kind": "user",
+        "avatar_url": "/-/profile/pic/alice",
+    }
+    assert actors["bob"] == {
+        "id": "bob",
+        "display_name": "Bob Jones",
+        "email": "bob@example.com",
+        "kind": "user",
+        "avatar_url": "/-/profile/pic/bob",
+    }
+    # Unknown id defaults to just {"id": id}.
+    assert actors["ghost"] == {"id": "ghost"}
+
+
+@pytest.mark.asyncio
+async def test_actors_from_ids_coerces_numeric_ids_to_strings():
+    ds = await _make_datasette()
+    actors = await ds.actors_from_ids([1, 2])
+    # Numeric ids are coerced to strings; unknown -> {"id": "1"} etc.
+    assert actors == {"1": {"id": "1"}, "2": {"id": "2"}}
+
+
+@pytest.mark.asyncio
+async def test_actors_from_ids_empty_list():
+    ds = await _make_datasette()
+    assert await ds.actors_from_ids([]) == {}
+
+
+class ResolveActorsPlugin:
+    """Test plugin contributing identities via the sub-hook."""
+
+    __name__ = "ResolveActorsPlugin"
+
+    @hookimpl
+    def datasette_resolve_actors(self, datasette, actor_ids):
+        resolved = {}
+        for actor_id in actor_ids:
+            if actor_id == "agent-x":
+                resolved[actor_id] = {
+                    "id": "agent-x",
+                    "display_name": "Agent X",
+                    "avatar_url": "/-/agents/pic/agent-x",
+                    "kind": "agent",
+                }
+        return resolved
+
+
+@pytest.mark.asyncio
+async def test_actors_from_ids_delegates_to_subhook():
+    ds = await _make_datasette()
+    plugin = ResolveActorsPlugin()
+    pm.register(plugin, name="undo-resolve-actors-plugin")
+    try:
+        actors = await ds.actors_from_ids(["alice", "agent-x", "nobody"])
+    finally:
+        pm.unregister(plugin)
+
+    # Known user still resolved by profiles.
+    assert actors["alice"]["kind"] == "user"
+    # Unknown id resolved by the sub-hook is merged in.
+    assert actors["agent-x"] == {
+        "id": "agent-x",
+        "display_name": "Agent X",
+        "avatar_url": "/-/agents/pic/agent-x",
+        "kind": "agent",
+    }
+    # Still-unresolved id falls back to the default.
+    assert actors["nobody"] == {"id": "nobody"}
+
+
+@pytest.mark.asyncio
+async def test_subhook_not_called_when_all_resolved():
+    ds = await _make_datasette()
+
+    calls = []
+
+    class SpyPlugin:
+        __name__ = "SpyPlugin"
+
+        @hookimpl
+        def datasette_resolve_actors(self, datasette, actor_ids):
+            calls.append(list(actor_ids))
+            return {}
+
+    plugin = SpyPlugin()
+    pm.register(plugin, name="undo-spy-resolve-actors")
+    try:
+        # Only known users -> sub-hook should not be invoked.
+        await ds.actors_from_ids(["alice", "bob"])
+        assert calls == []
+        # An unknown id -> sub-hook invoked with only the missing ids.
+        await ds.actors_from_ids(["alice", "ghost"])
+        assert calls == [["ghost"]]
+    finally:
+        pm.unregister(plugin)

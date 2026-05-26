@@ -1,6 +1,7 @@
 from datasette import hookimpl
 from datasette.permissions import Action
 from datasette.plugins import pm
+from datasette.utils import await_me_maybe
 from datasette_vite import vite_entry
 
 from . import hookspecs
@@ -17,6 +18,63 @@ _ = (pages, api)
 @hookimpl
 def register_routes():
     return router.routes()
+
+
+@hookimpl
+def actors_from_ids(datasette, actor_ids):
+    """Resolve actor IDs to actor dictionaries.
+
+    profiles is the single designated owner of this core hook (it is
+    ``firstresult=True``). We resolve our own users from
+    ``datasette_user_profiles`` and delegate any remaining IDs to other
+    identity sources via the ``datasette_resolve_actors`` sub-hook.
+    """
+
+    async def inner():
+        ids = [str(a) for a in actor_ids]
+        result = {}
+        if not ids:
+            return result
+
+        # 1. Our own users.
+        internal_db = datasette.get_internal_database()
+        placeholders = ",".join("?" * len(ids))
+        rows = (
+            await internal_db.execute(
+                "select actor_id, display_name, email"
+                " from datasette_user_profiles"
+                " where actor_id in ({})".format(placeholders),
+                ids,
+            )
+        ).rows
+        for r in rows:
+            actor_id = r["actor_id"]
+            result[actor_id] = {
+                "id": actor_id,
+                "display_name": r["display_name"],
+                "email": r["email"],
+                "kind": "user",
+                "avatar_url": datasette.urls.path(f"/-/profile/pic/{actor_id}"),
+            }
+
+        # 2. Delegate the rest to other identity sources (agents, service
+        #    accounts, remote directories, ...).
+        missing = [i for i in ids if i not in result]
+        if missing:
+            for hook_result in pm.hook.datasette_resolve_actors(
+                datasette=datasette, actor_ids=missing
+            ):
+                hook_result = await await_me_maybe(hook_result)
+                if hook_result:
+                    result.update(hook_result)
+
+        # 3. Default for anything still unresolved.
+        for i in ids:
+            result.setdefault(i, {"id": i})
+
+        return result
+
+    return inner
 
 
 @hookimpl
