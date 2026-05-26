@@ -77,6 +77,59 @@ def actors_from_ids(datasette, actor_ids):
     return inner
 
 
+def _datasette_acl_installed():
+    """True if datasette-acl is importable in this environment."""
+    try:
+        import datasette_acl  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+def _valid_actors_impl(datasette):
+    """Return every known profile as an acl ``{"id", "display"}`` actor dict.
+
+    Shared logic for the optional ``datasette_acl_valid_actors`` hookimpl.
+    Kept as a standalone function so it can be exercised independently of
+    whether ``datasette_acl`` is importable.
+    """
+
+    async def inner():
+        internal_db = datasette.get_internal_database()
+        rows = (
+            await internal_db.execute(
+                "select actor_id, display_name"
+                " from datasette_user_profiles"
+                " order by display_name"
+            )
+        ).rows
+        return [
+            {"id": r["actor_id"], "display": r["display_name"] or r["actor_id"]}
+            for r in rows
+        ]
+
+    return inner
+
+
+if _datasette_acl_installed():
+
+    @hookimpl
+    def datasette_acl_valid_actors(datasette):
+        """Optional: feed acl's actor autocomplete from the profiles directory.
+
+        acl's admin UI (group/permission editors) calls
+        ``datasette_acl_valid_actors`` to populate its actor picker. We return
+        every known profile as an ``{"id", "display"}`` dict so acl's standalone
+        admin pages get nicer displays without needing the richer search API.
+
+        This hookimpl is only registered when ``datasette_acl`` is importable,
+        so profiles imposes no hard dependency on acl. The share dialog uses the
+        richer ``/-/profiles/api/search`` endpoint instead of this hook.
+        """
+
+        return _valid_actors_impl(datasette)
+
+
 @hookimpl
 def extra_template_vars(datasette):
     entry = vite_entry(

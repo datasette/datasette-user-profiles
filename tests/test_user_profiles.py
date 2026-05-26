@@ -271,3 +271,54 @@ async def test_subhook_not_called_when_all_resolved():
         assert calls == [["ghost"]]
     finally:
         pm.unregister(plugin)
+
+
+# --- Optional datasette_acl_valid_actors integration ---
+
+from datasette.utils import await_me_maybe
+from datasette_user_profiles import _datasette_acl_installed, _valid_actors_impl
+
+
+@pytest.mark.asyncio
+async def test_no_hard_dependency_on_acl():
+    """profiles must import and start cleanly without datasette-acl, and only
+    register the acl hookimpl when acl is importable."""
+    import datasette_user_profiles as dup
+
+    has_hookimpl = hasattr(dup, "datasette_acl_valid_actors")
+    # The module-level hookimpl is registered iff acl is importable.
+    assert has_hookimpl == _datasette_acl_installed()
+
+    # Either way, profiles starts cleanly.
+    ds = Datasette(memory=True)
+    await ds.invoke_startup()
+    response = await ds.client.get("/-/plugins.json")
+    assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_valid_actors_returns_seeded_users():
+    """The valid_actors implementation returns every profile as an acl-style
+    {"id", "display"} dict (no query needed there — acl filters)."""
+    ds = await _make_datasette()
+    actors = await await_me_maybe(_valid_actors_impl(ds))
+    # All seeded users present, sorted by display_name
+    # ("Albert Smith" < "Alice Anderson" < "Bob Jones" < "Carol Lee").
+    assert actors == [
+        {"id": "albert", "display": "Albert Smith"},
+        {"id": "alice", "display": "Alice Anderson"},
+        {"id": "bob", "display": "Bob Jones"},
+        {"id": "cal", "display": "Carol Lee"},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_valid_actors_falls_back_to_actor_id_when_no_display_name():
+    ds = Datasette(memory=True)
+    await ds.invoke_startup()
+    internal = ds.get_internal_database()
+    await internal.execute_write(
+        "INSERT INTO datasette_user_profiles (actor_id) VALUES (?)", ["nameless"]
+    )
+    actors = await await_me_maybe(_valid_actors_impl(ds))
+    assert actors == [{"id": "nameless", "display": "nameless"}]
