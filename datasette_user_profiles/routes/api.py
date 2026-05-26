@@ -6,6 +6,8 @@ from datasette_plugin_router import Body
 
 from ..page_data import (
     DeletePhotoResponse,
+    SearchResponse,
+    SearchResult,
     UpdateProfileRequest,
     UpdateProfileResponse,
     UploadPhotoRequest,
@@ -138,6 +140,72 @@ async def api_delete_photo(datasette, request):
         [actor_id],
     )
     return Response.json(DeletePhotoResponse(ok=True).model_dump())
+
+
+def _truthy(value, default=True):
+    """Interpret a query-string flag. Absent → default."""
+    if value is None:
+        return default
+    return str(value).strip().lower() not in ("0", "false", "no", "off", "")
+
+
+@router.GET("/-/profiles/api/search$", output=SearchResponse)
+@check_permission()
+async def api_search(datasette, request):
+    q = (request.args.get("q") or "").strip()
+
+    try:
+        limit = int(request.args.get("limit") or 20)
+    except (TypeError, ValueError):
+        limit = 20
+    # Cap the limit at 50, and keep it at least 1.
+    limit = max(1, min(limit, 50))
+
+    # Per plan §F: email is included by default but can be omitted on request.
+    include_email = _truthy(request.args.get("email"), default=True)
+
+    internal_db = datasette.get_internal_database()
+
+    if not q:
+        # Empty query → most-recently-updated profiles (capped).
+        rows = (
+            await internal_db.execute(
+                "SELECT actor_id, display_name, email"
+                " FROM datasette_user_profiles"
+                " ORDER BY updated_at DESC"
+                " LIMIT ?",
+                [limit],
+            )
+        ).rows
+    else:
+        like = f"%{q}%"
+        prefix = f"{q}%"
+        # Match across display_name / email / actor_id; surface prefix
+        # matches on display_name first, then alphabetical by display_name.
+        rows = (
+            await internal_db.execute(
+                "SELECT actor_id, display_name, email"
+                " FROM datasette_user_profiles"
+                " WHERE display_name LIKE ? OR email LIKE ? OR actor_id LIKE ?"
+                " ORDER BY CASE WHEN display_name LIKE ? THEN 0 ELSE 1 END,"
+                " display_name"
+                " LIMIT ?",
+                [like, like, like, prefix, limit],
+            )
+        ).rows
+
+    results = [
+        SearchResult(
+            id=row["actor_id"],
+            display_name=row["display_name"],
+            email=row["email"] if include_email else None,
+            avatar_url=datasette.urls.path(f"/-/profile/pic/{row['actor_id']}"),
+            kind="user",
+        )
+        for row in rows
+    ]
+
+    return Response.json(SearchResponse(results=results).model_dump())
 
 
 @router.GET("/-/api/user-profile/photo/(?P<actor_id>[^/]+)$")

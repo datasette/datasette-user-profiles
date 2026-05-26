@@ -77,6 +77,20 @@ class DeletePhotoResponse(BaseModel):
     error: str | None = None
 
 
+class SearchResult(BaseModel):
+    model_config = ConfigDict(coerce_numbers_to_str=True)
+
+    id: str
+    display_name: str | None = None
+    email: str | None = None
+    avatar_url: str
+    kind: str = "user"
+
+
+class SearchResponse(BaseModel):
+    results: list[SearchResult] = []
+
+
 __exports__ = [
     ProfilePageData,
     EditProfilePageData,
