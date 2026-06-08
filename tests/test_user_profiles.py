@@ -165,7 +165,7 @@ async def test_search_forbidden_actor_blocked():
     assert response.status_code == 403
 
 
-# --- actors_from_ids + datasette_resolve_actors sub-hook ---
+# --- actors_from_ids + datasette_user_profiles_resolve_actors sub-hook ---
 
 
 @pytest.mark.asyncio
@@ -210,7 +210,7 @@ class ResolveActorsPlugin:
     __name__ = "ResolveActorsPlugin"
 
     @hookimpl
-    def datasette_resolve_actors(self, datasette, actor_ids):
+    def datasette_user_profiles_resolve_actors(self, datasette, actor_ids):
         resolved = {}
         for actor_id in actor_ids:
             if actor_id == "agent-x":
@@ -256,7 +256,7 @@ async def test_subhook_not_called_when_all_resolved():
         __name__ = "SpyPlugin"
 
         @hookimpl
-        def datasette_resolve_actors(self, datasette, actor_ids):
+        def datasette_user_profiles_resolve_actors(self, datasette, actor_ids):
             calls.append(list(actor_ids))
             return {}
 

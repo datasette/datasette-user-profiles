@@ -77,10 +77,10 @@ a `{actor_id: {...}}` map. Known users resolve to:
 }
 ```
 
-IDs that neither profiles nor any `datasette_resolve_actors` implementation
+IDs that neither profiles nor any `datasette_user_profiles_resolve_actors` implementation
 recognise default to a bare `{"id": <id>}`.
 
-### 3. `datasette_resolve_actors` sub-hook
+### 3. `datasette_user_profiles_resolve_actors` sub-hook
 
 Other identity sources contribute resolved actors through this sub-hook (see
 "Actor resolution" below). This is how agents and service accounts add
@@ -118,13 +118,13 @@ to `{"id": <id>}`.
 
 Other identity sources — agents, service accounts, remote directories — must
 **not** implement core `actors_from_ids` themselves. Instead they implement the
-`datasette_resolve_actors` sub-hook provided by this plugin:
+`datasette_user_profiles_resolve_actors` sub-hook provided by this plugin:
 
 ```python
 from datasette import hookimpl
 
 @hookimpl
-def datasette_resolve_actors(datasette, actor_ids):
+def datasette_user_profiles_resolve_actors(datasette, actor_ids):
     # actor_ids only contains IDs profiles could not resolve itself.
     # Return a (partial) {actor_id: {...}} map for the IDs you own.
     return {
@@ -137,7 +137,7 @@ def datasette_resolve_actors(datasette, actor_ids):
     }
 ```
 
-profiles aggregates every `datasette_resolve_actors` implementation, so any
+profiles aggregates every `datasette_user_profiles_resolve_actors` implementation, so any
 feature calling `datasette.actors_from_ids(...)` gets names and avatars for
 users and contributed identities alike. If a deployment needs a different
 `actors_from_ids` owner, it should disable this plugin's implementation rather

@@ -48,7 +48,7 @@ def datasette_user_profile_sections(datasette):
 
 
 @hookspec
-def datasette_resolve_actors(datasette, actor_ids):
+def datasette_user_profiles_resolve_actors(datasette, actor_ids):
     """
     Resolve actor IDs that this plugin owns into actor dictionaries.
 

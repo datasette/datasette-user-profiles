@@ -27,7 +27,7 @@ def actors_from_ids(datasette, actor_ids):
     profiles is the single designated owner of this core hook (it is
     ``firstresult=True``). We resolve our own users from
     ``datasette_user_profiles`` and delegate any remaining IDs to other
-    identity sources via the ``datasette_resolve_actors`` sub-hook.
+    identity sources via the ``datasette_user_profiles_resolve_actors`` sub-hook.
     """
 
     async def inner():
@@ -61,7 +61,7 @@ def actors_from_ids(datasette, actor_ids):
         #    accounts, remote directories, ...).
         missing = [i for i in ids if i not in result]
         if missing:
-            for hook_result in pm.hook.datasette_resolve_actors(
+            for hook_result in pm.hook.datasette_user_profiles_resolve_actors(
                 datasette=datasette, actor_ids=missing
             ):
                 hook_result = await await_me_maybe(hook_result)
