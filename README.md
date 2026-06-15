@@ -62,10 +62,11 @@ are alphabetical by `display_name`. Response shape:
 agents (or other identities) query those sources separately and merge
 client-side; profiles stays decoupled from the agent directory.
 
-### 2. `actors_from_ids` output shape
+### 2. `resolve_profile_actors()` output shape
 
-`datasette.actors_from_ids([...])` (resolved by this plugin, see below) returns
-a `{actor_id: {...}}` map. Known users resolve to:
+`resolve_profile_actors(datasette, actor_ids)` (see "Actor resolution" below)
+returns a `{actor_id: {...}}` map containing only the IDs that have a profile.
+Known users resolve to:
 
 ```json
 {
@@ -77,15 +78,8 @@ a `{actor_id: {...}}` map. Known users resolve to:
 }
 ```
 
-IDs that neither profiles nor any `datasette_user_profiles_resolve_actors` implementation
-recognise default to a bare `{"id": <id>}`.
-
-### 3. `datasette_user_profiles_resolve_actors` sub-hook
-
-Other identity sources contribute resolved actors through this sub-hook (see
-"Actor resolution" below). This is how agents and service accounts add
-themselves to the directory without colliding with the single-owner
-`actors_from_ids` hook.
+IDs without a matching profile are omitted from the map — the caller decides
+how to fall back (typically a bare `{"id": <id>}`).
 
 ### Consolidation note
 
@@ -95,7 +89,7 @@ This directory replaces three previously-scattered user-listing mechanisms:
 |---|---|
 | acl `datasette_acl_valid_actors` (no query, all actors) | the profiles search API (acl admin UI may keep the hook as a fallback) |
 | comments `datasette_comments_users` hook + `startswith` filtering | the profiles search API |
-| comments' private `from datasette_user_profiles.routes.pages import get_profile` | `datasette.actors_from_ids(...)` |
+| comments' private `from datasette_user_profiles.routes.pages import get_profile` | `resolve_profile_actors(...)` |
 
 The old hooks keep working for one release as a fallback when profiles is not
 installed, then they are retired.
@@ -106,42 +100,45 @@ an `{"id", "display"}` dict so acl's standalone admin pages get nicer displays.
 That hookimpl is only registered if `datasette_acl` is importable, so profiles
 has no hard dependency on acl.
 
-## Actor resolution (`actors_from_ids`)
+## Actor resolution (`resolve_profile_actors`)
 
-This plugin is the **single designated owner** of Datasette's core
-`actors_from_ids` hook. Because that hook is declared `firstresult=True`, only
-one plugin may implement it — if two plugins implement core `actors_from_ids`
-they collide and only one result is used. In this stack, `datasette-user-profiles`
-owns it: it resolves known users (with `display_name`, `email`, `kind: "user"`,
-and an `avatar_url` of `/-/profile/pic/<id>`), then defaults any unresolved ID
-to `{"id": <id>}`.
+This plugin **does not** implement Datasette's core `actors_from_ids` hook.
+That hook is declared `firstresult=True`, so the first plugin to implement it
+wins and every other identity source (agents, service accounts, remote
+directories) is locked out. Rather than silently seize that hook just by being
+installed, profiles exposes its resolution logic as a plain function you can
+opt into:
 
-Other identity sources — agents, service accounts, remote directories — must
-**not** implement core `actors_from_ids` themselves. Instead they implement the
-`datasette_user_profiles_resolve_actors` sub-hook provided by this plugin:
+```python
+from datasette_user_profiles import resolve_profile_actors
+
+actors = await resolve_profile_actors(datasette, ["alice", "agent-1"])
+# {"alice": {"id": "alice", "display_name": "Alice Anderson",
+#            "email": "alice@example.com", "kind": "user",
+#            "avatar_url": "/-/profile/pic/alice"}}
+```
+
+It returns a `{actor_id: {...}}` map for the IDs that have a profile, and omits
+the rest so you can merge it with other sources and apply your own fallback.
+
+If you want profiles to back Datasette's core `actors_from_ids`, wire it up
+from a plugin you control — designating a single owner for the hook and
+choosing how to merge other identity sources:
 
 ```python
 from datasette import hookimpl
+from datasette_user_profiles import resolve_profile_actors
 
 @hookimpl
-def datasette_user_profiles_resolve_actors(datasette, actor_ids):
-    # actor_ids only contains IDs profiles could not resolve itself.
-    # Return a (partial) {actor_id: {...}} map for the IDs you own.
-    return {
-        "agent-1": {
-            "id": "agent-1",
-            "display_name": "Research Agent",
-            "avatar_url": "/-/agents/pic/agent-1",
-            "kind": "agent",
-        },
-    }
+def actors_from_ids(datasette, actor_ids):
+    async def inner():
+        actors = await resolve_profile_actors(datasette, actor_ids)
+        # ...merge in agents / service accounts / other directories here...
+        for actor_id in actor_ids:
+            actors.setdefault(str(actor_id), {"id": str(actor_id)})
+        return actors
+    return inner
 ```
-
-profiles aggregates every `datasette_user_profiles_resolve_actors` implementation, so any
-feature calling `datasette.actors_from_ids(...)` gets names and avatars for
-users and contributed identities alike. If a deployment needs a different
-`actors_from_ids` owner, it should disable this plugin's implementation rather
-than register a second one.
 
 ## Development
 

@@ -1,7 +1,8 @@
+import json
+
 from datasette import hookimpl
 from datasette.permissions import Action
 from datasette.plugins import pm
-from datasette.utils import await_me_maybe
 from datasette_vite import vite_entry
 
 from . import hookspecs
@@ -20,61 +21,64 @@ def register_routes():
     return router.routes()
 
 
-@hookimpl
-def actors_from_ids(datasette, actor_ids):
-    """Resolve actor IDs to actor dictionaries.
+async def resolve_profile_actors(datasette, actor_ids):
+    """Resolve actor IDs to profile actor dictionaries.
 
-    profiles is the single designated owner of this core hook (it is
-    ``firstresult=True``). We resolve our own users from
-    ``datasette_user_profiles`` and delegate any remaining IDs to other
-    identity sources via the ``datasette_user_profiles_resolve_actors`` sub-hook.
+    Returns a ``{actor_id: {...}}`` map for the IDs that have a matching
+    profile. IDs without a profile are simply omitted, so callers can merge
+    this result with other identity sources and apply their own fallback for
+    anything still unresolved. Each known user resolves to::
+
+        {
+            "id": "alice",
+            "display_name": "Alice Anderson",
+            "email": "alice@example.com",
+            "kind": "user",
+            "avatar_url": "/-/profile/pic/alice",
+        }
+
+    This plugin deliberately does **not** implement Datasette's core
+    ``actors_from_ids`` plugin hook. That hook is ``firstresult=True``, so any
+    plugin implementing it locks out every other identity source. Instead, opt
+    in from your own plugin if you want profiles to back actor resolution::
+
+        from datasette import hookimpl
+        from datasette_user_profiles import resolve_profile_actors
+
+        @hookimpl
+        def actors_from_ids(datasette, actor_ids):
+            async def inner():
+                actors = await resolve_profile_actors(datasette, actor_ids)
+                # merge in your other identity sources here, then default the rest
+                for actor_id in actor_ids:
+                    actors.setdefault(str(actor_id), {"id": str(actor_id)})
+                return actors
+            return inner
     """
+    ids = [str(a) for a in actor_ids]
+    if not ids:
+        return {}
 
-    async def inner():
-        ids = [str(a) for a in actor_ids]
-        result = {}
-        if not ids:
-            return result
-
-        # 1. Our own users.
-        internal_db = datasette.get_internal_database()
-        placeholders = ",".join("?" * len(ids))
-        rows = (
-            await internal_db.execute(
-                "select actor_id, display_name, email"
-                " from datasette_user_profiles"
-                " where actor_id in ({})".format(placeholders),
-                ids,
-            )
-        ).rows
-        for r in rows:
-            actor_id = r["actor_id"]
-            result[actor_id] = {
-                "id": actor_id,
-                "display_name": r["display_name"],
-                "email": r["email"],
-                "kind": "user",
-                "avatar_url": datasette.urls.path(f"/-/profile/pic/{actor_id}"),
-            }
-
-        # 2. Delegate the rest to other identity sources (agents, service
-        #    accounts, remote directories, ...).
-        missing = [i for i in ids if i not in result]
-        if missing:
-            for hook_result in pm.hook.datasette_user_profiles_resolve_actors(
-                datasette=datasette, actor_ids=missing
-            ):
-                hook_result = await await_me_maybe(hook_result)
-                if hook_result:
-                    result.update(hook_result)
-
-        # 3. Default for anything still unresolved.
-        for i in ids:
-            result.setdefault(i, {"id": i})
-
-        return result
-
-    return inner
+    internal_db = datasette.get_internal_database()
+    rows = (
+        await internal_db.execute(
+            "select actor_id, display_name, email"
+            " from datasette_user_profiles"
+            " where actor_id in (select value from json_each(:ids))",
+            {"ids": json.dumps(ids)},
+        )
+    ).rows
+    result = {}
+    for r in rows:
+        actor_id = r["actor_id"]
+        result[actor_id] = {
+            "id": actor_id,
+            "display_name": r["display_name"],
+            "email": r["email"],
+            "kind": "user",
+            "avatar_url": datasette.urls.path(f"/-/profile/pic/{actor_id}"),
+        }
+    return result
 
 
 def _datasette_acl_installed():

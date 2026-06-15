@@ -45,29 +45,3 @@ def datasette_user_profile_sections(datasette):
     The custom element is responsible for fetching its own data and
     rendering its own UI.
     """
-
-
-@hookspec
-def datasette_user_profiles_resolve_actors(datasette, actor_ids):
-    """
-    Resolve actor IDs that this plugin owns into actor dictionaries.
-
-    datasette-user-profiles is the single owner of the core
-    ``actors_from_ids`` hook (which is ``firstresult=True``). Other identity
-    sources — agents, service accounts, remote directories — participate by
-    implementing this sub-hook instead.
-
-    ``actor_ids`` contains only the IDs that profiles could not resolve
-    itself. Return a (possibly partial) dict mapping the IDs you recognise to
-    actor dictionaries, e.g.::
-
-        {"agent-1": {
-            "id": "agent-1",
-            "display_name": "Research Agent",
-            "avatar_url": "/-/agents/pic/agent-1",
-            "kind": "agent",
-        }}
-
-    Return ``None`` or an empty dict for IDs you do not own. May be sync or
-    async.
-    """
