@@ -11,7 +11,7 @@ export type TagName = string;
 export type JsUrls = string[];
 export type CssUrls = string[];
 export type SortOrder = number;
-export type Icon = string;
+export type Icon = string | null;
 
 export interface ProfileSectionData {
   id: Id;

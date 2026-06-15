@@ -22,12 +22,16 @@ SEED_PROFILES = [
 ]
 
 
-async def _make_datasette():
-    """Datasette where actor 'alice' has profile_access, seeded with profiles."""
-    ds = Datasette(
-        memory=True,
-        config={"permissions": {"profile_access": {"id": "alice"}}},
-    )
+async def _make_datasette(plugin_config=None):
+    """Datasette where actor 'alice' has profile_access, seeded with profiles.
+
+    Pass ``plugin_config`` to set ``plugins.datasette-user-profiles`` config,
+    e.g. ``{"editable_fields": {"email": False}}``.
+    """
+    config = {"permissions": {"profile_access": {"id": "alice"}}}
+    if plugin_config is not None:
+        config["plugins"] = {"datasette-user-profiles": plugin_config}
+    ds = Datasette(memory=True, config=config)
     await ds.invoke_startup()
     internal = ds.get_internal_database()
     for actor_id, display_name, email, updated_at in SEED_PROFILES:
@@ -157,9 +161,7 @@ async def test_search_unauthenticated_blocked():
 @pytest.mark.asyncio
 async def test_search_forbidden_actor_blocked():
     ds = await _make_datasette()
-    response = await ds.client.get(
-        "/-/profiles/api/search", cookies=_cookie(ds, "bob")
-    )
+    response = await ds.client.get("/-/profiles/api/search", cookies=_cookie(ds, "bob"))
     assert response.status_code == 403
 
 
@@ -266,3 +268,128 @@ async def test_valid_actors_falls_back_to_actor_id_when_no_display_name():
     )
     actors = await await_me_maybe(_valid_actors_impl(ds))
     assert actors == [{"id": "nameless", "display": "nameless"}]
+
+
+# --- editable_fields config ---
+
+
+async def _get_profile_row(ds, actor_id):
+    return (
+        await ds.get_internal_database().execute(
+            "SELECT display_name, bio, email, avatar_icon, avatar_color"
+            " FROM datasette_user_profiles WHERE actor_id = ?",
+            [actor_id],
+        )
+    ).first()
+
+
+def test_editable_fields_defaults_all_true():
+    from datasette_user_profiles.config import editable_fields
+
+    ds = Datasette(memory=True)
+    assert editable_fields(ds) == {
+        "display_name": True,
+        "bio": True,
+        "email": True,
+        "avatar": True,
+    }
+
+
+def test_editable_fields_honours_overrides():
+    from datasette_user_profiles.config import editable_fields
+
+    ds = Datasette(
+        memory=True,
+        config={
+            "plugins": {
+                "datasette-user-profiles": {
+                    "editable_fields": {"email": False, "avatar": False}
+                }
+            }
+        },
+    )
+    assert editable_fields(ds) == {
+        "display_name": True,
+        "bio": True,
+        "email": False,
+        "avatar": False,
+    }
+
+
+@pytest.mark.asyncio
+async def test_update_changes_all_fields_by_default():
+    ds = await _make_datasette()
+    response = await ds.client.post(
+        "/-/api/user-profile/update",
+        json={"display_name": "Alice A.", "email": "new@example.com"},
+        cookies=_cookie(ds, "alice"),
+    )
+    assert response.status_code == 200
+    row = await _get_profile_row(ds, "alice")
+    assert row["display_name"] == "Alice A."
+    assert row["email"] == "new@example.com"
+
+
+@pytest.mark.asyncio
+async def test_update_preserves_locked_field():
+    ds = await _make_datasette({"editable_fields": {"email": False}})
+    response = await ds.client.post(
+        "/-/api/user-profile/update",
+        json={"display_name": "Alice A.", "email": "hacker@evil.com"},
+        cookies=_cookie(ds, "alice"),
+    )
+    assert response.status_code == 200
+    row = await _get_profile_row(ds, "alice")
+    # Editable field changed; locked email kept its seeded value.
+    assert row["display_name"] == "Alice A."
+    assert row["email"] == "alice@example.com"
+
+
+@pytest.mark.asyncio
+async def test_update_locked_avatar_not_written():
+    ds = await _make_datasette({"editable_fields": {"avatar": False}})
+    response = await ds.client.post(
+        "/-/api/user-profile/update",
+        json={"avatar_icon": "star", "avatar_color": "#ff0000"},
+        cookies=_cookie(ds, "alice"),
+    )
+    assert response.status_code == 200
+    row = await _get_profile_row(ds, "alice")
+    assert row["avatar_icon"] is None
+    assert row["avatar_color"] is None
+
+
+@pytest.mark.asyncio
+async def test_locked_avatar_rejects_photo_upload():
+    ds = await _make_datasette({"editable_fields": {"avatar": False}})
+    import base64
+
+    tiny_png = base64.b64encode(b"\x89PNG\r\n\x1a\n").decode()
+    response = await ds.client.post(
+        "/-/api/user-profile/photo",
+        json={"photo_data": tiny_png, "content_type": "image/png"},
+        cookies=_cookie(ds, "alice"),
+    )
+    assert response.status_code == 403
+    assert response.json()["error"] == "Avatar editing is disabled"
+
+
+@pytest.mark.asyncio
+async def test_locked_avatar_rejects_photo_delete():
+    ds = await _make_datasette({"editable_fields": {"avatar": False}})
+    response = await ds.client.post(
+        "/-/api/user-profile/photo/delete",
+        json={},
+        cookies=_cookie(ds, "alice"),
+    )
+    assert response.status_code == 403
+    assert response.json()["error"] == "Avatar editing is disabled"
+
+
+@pytest.mark.asyncio
+async def test_edit_page_exposes_editable_map():
+    ds = await _make_datasette({"editable_fields": {"email": False}})
+    response = await ds.client.get("/-/user-profile/edit", cookies=_cookie(ds, "alice"))
+    assert response.status_code == 200
+    # The page_data JSON embedded in the page carries the editable map.
+    assert '"email": false' in response.text or '"email":false' in response.text

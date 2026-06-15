@@ -4,6 +4,7 @@ from typing import Annotated
 from datasette import Response
 from datasette_plugin_router import Body
 
+from ..config import editable_fields
 from ..page_data import (
     DeletePhotoResponse,
     SearchResponse,
@@ -35,6 +36,27 @@ async def api_update_profile(
     actor_id = str(actor_id)
 
     internal_db = datasette.get_internal_database()
+    editable = editable_fields(datasette)
+
+    # Locked fields keep whatever is already stored; users can't change them.
+    existing = (
+        await internal_db.execute(
+            "SELECT display_name, bio, email, avatar_icon, avatar_color"
+            " FROM datasette_user_profiles WHERE actor_id = ?",
+            [actor_id],
+        )
+    ).first()
+
+    def pick(field, submitted, current_key=None):
+        if editable[field]:
+            return submitted
+        return existing[current_key or field] if existing else None
+
+    display_name = pick("display_name", body.display_name)
+    bio = pick("bio", body.bio)
+    email = pick("email", body.email)
+    avatar_icon = pick("avatar", body.avatar_icon, "avatar_icon")
+    avatar_color = pick("avatar", body.avatar_color, "avatar_color")
 
     def write(conn):
         with conn:
@@ -51,7 +73,7 @@ async def api_update_profile(
                     avatar_color = excluded.avatar_color,
                     updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now')
                 """,
-                [actor_id, body.display_name, body.bio, body.email, body.avatar_icon, body.avatar_color],
+                [actor_id, display_name, bio, email, avatar_icon, avatar_color],
             )
 
     await internal_db.execute_write_fn(write)
@@ -76,6 +98,14 @@ async def api_upload_photo(
         )
     actor_id = str(actor_id)
 
+    if not editable_fields(datasette)["avatar"]:
+        return Response.json(
+            UploadPhotoResponse(
+                ok=False, error="Avatar editing is disabled"
+            ).model_dump(),
+            status=403,
+        )
+
     try:
         photo_bytes = base64.b64decode(body.photo_data)
     except Exception:
@@ -86,9 +116,7 @@ async def api_upload_photo(
 
     if len(photo_bytes) > 1048576:
         return Response.json(
-            UploadPhotoResponse(
-                ok=False, error="Photo exceeds 1MB limit"
-            ).model_dump(),
+            UploadPhotoResponse(ok=False, error="Photo exceeds 1MB limit").model_dump(),
             status=400,
         )
 
@@ -133,6 +161,14 @@ async def api_delete_photo(datasette, request):
             status=403,
         )
     actor_id = str(actor_id)
+
+    if not editable_fields(datasette)["avatar"]:
+        return Response.json(
+            DeletePhotoResponse(
+                ok=False, error="Avatar editing is disabled"
+            ).model_dump(),
+            status=403,
+        )
 
     internal_db = datasette.get_internal_database()
     await internal_db.execute_write(

@@ -38,6 +38,8 @@ class EditProfilePageData(BaseModel):
     avatar_icon_choices: list[str] = []
     avatar_color_choices: dict[str, str] = {}
     avatar_icon_svgs: dict[str, str] = {}
+    # Which fields the current deployment lets users edit (default all True).
+    editable: dict[str, bool] = {}
 
 
 # /-/profiles/ — list all profiles
@@ -48,6 +50,7 @@ class ProfilesPageData(BaseModel):
 
 
 # API models
+
 
 class UpdateProfileRequest(BaseModel):
     display_name: str | None = None

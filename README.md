@@ -17,6 +17,30 @@ datasette install datasette-user-profiles
 
 Usage instructions go here.
 
+## Locking fields users can't edit
+
+Every profile field is user-editable by default. When another part of your
+stack is the authoritative source for a field — e.g. a GitHub auth plugin that
+already puts the user's `email` (and name, avatar, ...) into the actor JSON —
+you can stop users from overwriting it from the profile editor.
+
+Set `editable_fields` in plugin config. Each field defaults to `true`
+(editable); list only the ones you want to lock:
+
+```yaml
+plugins:
+  datasette-user-profiles:
+    editable_fields:
+      email: false
+      display_name: false
+      avatar: false      # covers the uploaded photo and the generated icon/color
+      bio: true
+```
+
+Locked fields are enforced server-side — the update and photo endpoints ignore
+or reject changes to them, not just hide the inputs — and the edit page renders
+them disabled.
+
 ## Acting as the actor directory
 
 `datasette-user-profiles` is the canonical user directory for this stack. Every
