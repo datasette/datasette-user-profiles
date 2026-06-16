@@ -161,9 +161,7 @@ def menu_links(datasette, actor):
             if actor_id:
                 return [
                     {
-                        "href": datasette.urls.path(
-                            f"/-/profile/{actor_id}"
-                        ),
+                        "href": datasette.urls.path(f"/-/profile/{actor_id}"),
                         "label": "Your profile",
                     },
                 ]
@@ -179,11 +177,15 @@ def startup(datasette):
     async def inner():
         from sqlite_utils import Database as SqliteUtilsDatabase
         from .internal_migrations import internal_migrations
+        from .seed import apply_seeds
 
         def migrate(conn):
             db = SqliteUtilsDatabase(conn)
             internal_migrations.apply(db)
 
         await datasette.get_internal_database().execute_write_fn(migrate)
+
+        # Let other plugins seed the directory once the tables exist.
+        await apply_seeds(datasette)
 
     return inner

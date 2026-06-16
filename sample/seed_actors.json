@@ -1,0 +1,26 @@
+[
+  {
+    "id": "ada",
+    "name": "Ada Lovelace",
+    "email": "ada@analytical.engine",
+    "bio": "Wrote the first algorithm intended for a machine.",
+    "avatar_icon": "star",
+    "avatar_color": "#8839ef"
+  },
+  {
+    "id": "grace",
+    "name": "Grace Hopper",
+    "email": "grace@navy.mil",
+    "bio": "Coined the term \"debugging\" after a literal moth.",
+    "avatar_icon": "lightning-charge",
+    "avatar_color": "#1e66f5"
+  },
+  {
+    "id": "alan",
+    "name": "Alan Turing",
+    "email": "alan@bletchley.park",
+    "bio": "Asked whether machines can think.",
+    "avatar_icon": "eye",
+    "avatar_color": "#40a02b"
+  }
+]

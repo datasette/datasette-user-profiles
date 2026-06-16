@@ -45,3 +45,49 @@ def datasette_user_profile_sections(datasette):
     The custom element is responsible for fetching its own data and
     rendering its own UI.
     """
+
+
+@dataclass
+class ProfileSeed:
+    """A pre-existing profile contributed by a plugin to seed the directory.
+
+    Plugins that already know about people (an auth backend, a debug actor
+    set, a directory exported as JSON) return these from
+    ``datasette_user_profile_seeds`` so their users appear in the profiles
+    directory, people-search and avatar endpoints without anyone having to
+    visit the edit page first.
+
+    Only ``actor_id`` is required. A photo can be supplied either as raw
+    ``photo_bytes`` (with ``photo_content_type``) or as a ``data:`` URL in
+    ``photo_url``, which core decodes. Remote (``http(s)://``) photos are not
+    fetched by core — fetch them in your plugin and pass ``photo_bytes``.
+    """
+
+    actor_id: str
+    display_name: str | None = None
+    bio: str | None = None
+    email: str | None = None
+    avatar_icon: str | None = None
+    avatar_color: str | None = None
+    photo_url: str | None = None  # data: URL, decoded by core
+    photo_bytes: bytes | None = None
+    photo_content_type: str | None = None
+
+
+@hookspec
+def datasette_user_profile_seeds(datasette):
+    """
+    Contribute pre-existing profiles to seed the profiles directory.
+
+    Return a list of ProfileSeed instances (plain dicts are also accepted and
+    coerced; ``id`` is treated as an alias for ``actor_id``). You may instead
+    return an awaitable, or a zero-argument callable returning a list or
+    awaitable, so a plugin can do async work (e.g. fetch a JSON file) before
+    producing its seeds.
+
+    Seeding runs once at startup and is *fill-missing*: a new actor is inserted
+    with everything you provide, but for an actor that already exists each field
+    is only filled when it is currently empty. Seeds never overwrite a value a
+    user has set, and an existing photo is never replaced. Seeding is therefore
+    idempotent and safe to run on every restart.
+    """
