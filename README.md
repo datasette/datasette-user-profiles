@@ -164,6 +164,65 @@ def actors_from_ids(datasette, actor_ids):
     return inner
 ```
 
+## Seeding profiles from other plugins
+
+Profiles are normally created when a user visits their edit page. But plugins
+that *already* know about people — an auth backend, a set of demo actors, a
+directory exported as JSON — can pre-populate the directory so those users show
+up in search, the profiles list and avatar endpoints without anyone having to
+log in first. Implement the `datasette_user_profile_seeds` hook:
+
+```python
+from datasette import hookimpl
+from datasette_user_profiles.hookspecs import ProfileSeed
+
+@hookimpl
+def datasette_user_profile_seeds(datasette):
+    return [
+        ProfileSeed(
+            actor_id="ada",
+            display_name="Ada Lovelace",
+            email="ada@example.com",
+            bio="Wrote the first algorithm intended for a machine.",
+            avatar_icon="star",       # optional generated avatar
+            avatar_color="#8839ef",
+        ),
+    ]
+```
+
+`ProfileSeed` requires only `actor_id`; every other field is optional. A photo
+can be supplied as raw bytes (`photo_bytes` + `photo_content_type`) or as a
+`data:` URL (`photo_url`), which core decodes. Remote `http(s)://` photos are
+**not** fetched by core — fetch them in your plugin and pass `photo_bytes`.
+
+Plain dicts are accepted instead of `ProfileSeed` (with `id` as an alias for
+`actor_id`). To do async work first — such as fetching a JSON file — return an
+async callable (or awaitable) instead of a list; it's only awaited when seeding
+runs at startup:
+
+```python
+@hookimpl
+def datasette_user_profile_seeds(datasette):
+    async def inner():
+        async with httpx.AsyncClient() as client:
+            records = (await client.get("https://example.com/actors.json")).json()
+        return [
+            {"id": r["id"], "display_name": r["name"], "email": r.get("email")}
+            for r in records
+        ]
+    return inner
+```
+
+See [`sample/sample_seed_actors.py`](sample/sample_seed_actors.py) for a working
+JSON-directory plugin.
+
+Seeding is **fill-missing** and idempotent: a new actor is inserted with
+everything you provide, but for an actor that already exists each field is only
+filled when it is currently empty, and an existing photo is never replaced. A
+seed therefore never clobbers a value a user has edited, and the hook is safe to
+run on every restart. A broken or slow implementation is isolated — it's logged
+and skipped rather than aborting startup.
+
 ## Development
 
 To set up this plugin locally, first checkout the code. You can confirm it is available like this:
