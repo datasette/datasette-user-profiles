@@ -107,9 +107,7 @@ async def profiles_page(datasette, request):
         entrypoint="src/pages/profiles/index.ts",
         page_data=ProfilesPageData(
             profiles=profiles,
-            has_own_profile=any(
-                p.actor_id == current_actor_id for p in profiles
-            ),
+            has_own_profile=any(p.actor_id == current_actor_id for p in profiles),
             current_actor_id=current_actor_id,
         ),
     )
@@ -192,7 +190,9 @@ async def profile_pic(datasette, request, actor_id: str):
         )
     ).first()
     if profile_row and profile_row["avatar_icon"] and profile_row["avatar_color"]:
-        svg = generate_avatar_svg(profile_row["avatar_icon"], profile_row["avatar_color"])
+        svg = generate_avatar_svg(
+            profile_row["avatar_icon"], profile_row["avatar_color"]
+        )
         if svg:
             return Response(
                 body=svg,
@@ -215,6 +215,7 @@ async def edit_profile_page(datasette, request):
     actor_id = str(actor_id)
 
     from ..avatar import AVATAR_ICONS, AVATAR_COLORS
+    from ..config import editable_fields
 
     profile = await get_profile(datasette, actor_id)
 
@@ -228,5 +229,6 @@ async def edit_profile_page(datasette, request):
             avatar_icon_choices=sorted(AVATAR_ICONS.keys()),
             avatar_color_choices=AVATAR_COLORS,
             avatar_icon_svgs=AVATAR_ICONS,
+            editable=editable_fields(datasette),
         ),
     )

@@ -32,3 +32,15 @@ def m002_avatar_icon_color(db: Database):
         ALTER TABLE datasette_user_profiles ADD COLUMN avatar_icon TEXT;
         ALTER TABLE datasette_user_profiles ADD COLUMN avatar_color TEXT;
     """)
+
+
+@internal_migrations()
+def m003_search_indexes(db: Database):
+    # Indexes backing the /-/profiles/api/search endpoint so LIKE
+    # prefix/contains queries stay fast as the directory grows.
+    db.executescript("""
+        CREATE INDEX IF NOT EXISTS idx_profiles_display_name
+            ON datasette_user_profiles(display_name);
+        CREATE INDEX IF NOT EXISTS idx_profiles_email
+            ON datasette_user_profiles(email);
+    """)

@@ -8,6 +8,12 @@
   const pageData = loadPageData<EditProfilePageData>();
   const profile = pageData.profile;
 
+  // Which fields this deployment allows users to edit. A field is editable
+  // unless explicitly turned off via plugin config; missing map => all on.
+  const editable = pageData.editable ?? {};
+  const canEdit = (field: string) => editable[field] !== false;
+  const canEditAvatar = canEdit("avatar");
+
   let displayName = $state(profile.display_name ?? "");
   let bio = $state(profile.bio ?? "");
   let email = $state(profile.email ?? "");
@@ -90,6 +96,7 @@
   }
 
   function handleImageFile(file: File) {
+    if (!canEditAvatar) return;
     if (!file.type.startsWith("image/")) {
       photoError = "Please select an image file";
       return;
@@ -238,22 +245,26 @@
     <div class="photo-section-inner">
       <div class="photo-info">
         <h2>Profile Photo</h2>
-        <p class="hint">Drag/drop, or paste an image.<br/>1MB max, JPG, PNG, or GIF</p>
-        <div class="photo-actions">
-          <label class="file-btn">
-            {hasPhoto || selectedFile ? "Change photo" : "Upload photo"}
-            <input type="file" accept="image/*" onchange={onFileInput} hidden />
-          </label>
-          {#if selectedFile}
-            <button
-              type="button"
-              onclick={() => { selectedFile = null; photoPreview = hasPhoto ? `/-/api/user-profile/photo/${encodeURIComponent(profile.actor_id)}` : null; }}
-              class="clear-btn"
-            >
-              Undo
-            </button>
-          {/if}
-        </div>
+        {#if canEditAvatar}
+          <p class="hint">Drag/drop, or paste an image.<br/>1MB max, JPG, PNG, or GIF</p>
+          <div class="photo-actions">
+            <label class="file-btn">
+              {hasPhoto || selectedFile ? "Change photo" : "Upload photo"}
+              <input type="file" accept="image/*" onchange={onFileInput} hidden />
+            </label>
+            {#if selectedFile}
+              <button
+                type="button"
+                onclick={() => { selectedFile = null; photoPreview = hasPhoto ? `/-/api/user-profile/photo/${encodeURIComponent(profile.actor_id)}` : null; }}
+                class="clear-btn"
+              >
+                Undo
+              </button>
+            {/if}
+          </div>
+        {:else}
+          <p class="hint">Avatar is managed elsewhere and can't be changed here.</p>
+        {/if}
       </div>
       <div class="photo-preview-area">
         <div class="avatar-anchor" bind:this={anchorEl}>
@@ -310,14 +321,16 @@
             </div>
           {/if}
         </div>
-        <div class="below-avatar">
-          {#if hasPhoto && !selectedFile}
-            <button type="button" onclick={deletePhoto} disabled={saving} class="remove-btn">Remove</button>
-          {/if}
-          <button type="button" class="icon-picker-toggle" onclick={openPicker}>
-            {avatarIcon ? "Change icon" : "Choose icon"}
-          </button>
-        </div>
+        {#if canEditAvatar}
+          <div class="below-avatar">
+            {#if hasPhoto && !selectedFile}
+              <button type="button" onclick={deletePhoto} disabled={saving} class="remove-btn">Remove</button>
+            {/if}
+            <button type="button" class="icon-picker-toggle" onclick={openPicker}>
+              {avatarIcon ? "Change icon" : "Choose icon"}
+            </button>
+          </div>
+        {/if}
       </div>
     </div>
 
@@ -327,19 +340,41 @@
   </section>
 
   <form onsubmit={handleSubmit}>
-    <label for="display-name">Display Name</label>
+    <label for="display-name">
+      Display Name
+      {#if !canEdit("display_name")}<span class="locked">locked</span>{/if}
+    </label>
     <input
       id="display-name"
       type="text"
       bind:value={displayName}
       placeholder={profile.actor_id}
+      disabled={!canEdit("display_name")}
     />
 
-    <label for="bio">Bio</label>
-    <textarea id="bio" bind:value={bio} rows="4" placeholder="Tell us about yourself"></textarea>
+    <label for="bio">
+      Bio
+      {#if !canEdit("bio")}<span class="locked">locked</span>{/if}
+    </label>
+    <textarea
+      id="bio"
+      bind:value={bio}
+      rows="4"
+      placeholder="Tell us about yourself"
+      disabled={!canEdit("bio")}
+    ></textarea>
 
-    <label for="email">Email</label>
-    <input id="email" type="email" bind:value={email} placeholder="you@example.com" />
+    <label for="email">
+      Email
+      {#if !canEdit("email")}<span class="locked">locked</span>{/if}
+    </label>
+    <input
+      id="email"
+      type="email"
+      bind:value={email}
+      placeholder="you@example.com"
+      disabled={!canEdit("email")}
+    />
 
     <button type="submit" disabled={saving}>
       {saving ? "Saving..." : "Save Profile"}
@@ -570,6 +605,20 @@
   label {
     font-weight: 600;
     margin-top: 0.5rem;
+  }
+  .locked {
+    margin-left: 0.4rem;
+    font-weight: 400;
+    font-size: 0.7rem;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  input:disabled,
+  textarea:disabled {
+    background: #f3f3f3;
+    color: #888;
+    cursor: not-allowed;
   }
   input[type="text"],
   input[type="email"],

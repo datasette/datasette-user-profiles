@@ -4,8 +4,11 @@ from typing import Annotated
 from datasette import Response
 from datasette_plugin_router import Body
 
+from ..config import editable_fields
 from ..page_data import (
     DeletePhotoResponse,
+    SearchResponse,
+    SearchResult,
     UpdateProfileRequest,
     UpdateProfileResponse,
     UploadPhotoRequest,
@@ -33,6 +36,27 @@ async def api_update_profile(
     actor_id = str(actor_id)
 
     internal_db = datasette.get_internal_database()
+    editable = editable_fields(datasette)
+
+    # Locked fields keep whatever is already stored; users can't change them.
+    existing = (
+        await internal_db.execute(
+            "SELECT display_name, bio, email, avatar_icon, avatar_color"
+            " FROM datasette_user_profiles WHERE actor_id = ?",
+            [actor_id],
+        )
+    ).first()
+
+    def pick(field, submitted, current_key=None):
+        if editable[field]:
+            return submitted
+        return existing[current_key or field] if existing else None
+
+    display_name = pick("display_name", body.display_name)
+    bio = pick("bio", body.bio)
+    email = pick("email", body.email)
+    avatar_icon = pick("avatar", body.avatar_icon, "avatar_icon")
+    avatar_color = pick("avatar", body.avatar_color, "avatar_color")
 
     def write(conn):
         with conn:
@@ -49,7 +73,7 @@ async def api_update_profile(
                     avatar_color = excluded.avatar_color,
                     updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now')
                 """,
-                [actor_id, body.display_name, body.bio, body.email, body.avatar_icon, body.avatar_color],
+                [actor_id, display_name, bio, email, avatar_icon, avatar_color],
             )
 
     await internal_db.execute_write_fn(write)
@@ -74,6 +98,14 @@ async def api_upload_photo(
         )
     actor_id = str(actor_id)
 
+    if not editable_fields(datasette)["avatar"]:
+        return Response.json(
+            UploadPhotoResponse(
+                ok=False, error="Avatar editing is disabled"
+            ).model_dump(),
+            status=403,
+        )
+
     try:
         photo_bytes = base64.b64decode(body.photo_data)
     except Exception:
@@ -84,9 +116,7 @@ async def api_upload_photo(
 
     if len(photo_bytes) > 1048576:
         return Response.json(
-            UploadPhotoResponse(
-                ok=False, error="Photo exceeds 1MB limit"
-            ).model_dump(),
+            UploadPhotoResponse(ok=False, error="Photo exceeds 1MB limit").model_dump(),
             status=400,
         )
 
@@ -132,12 +162,86 @@ async def api_delete_photo(datasette, request):
         )
     actor_id = str(actor_id)
 
+    if not editable_fields(datasette)["avatar"]:
+        return Response.json(
+            DeletePhotoResponse(
+                ok=False, error="Avatar editing is disabled"
+            ).model_dump(),
+            status=403,
+        )
+
     internal_db = datasette.get_internal_database()
     await internal_db.execute_write(
         "DELETE FROM datasette_user_profile_photos WHERE actor_id = ?",
         [actor_id],
     )
     return Response.json(DeletePhotoResponse(ok=True).model_dump())
+
+
+def _truthy(value, default=True):
+    """Interpret a query-string flag. Absent → default."""
+    if value is None:
+        return default
+    return str(value).strip().lower() not in ("0", "false", "no", "off", "")
+
+
+@router.GET("/-/profiles/api/search$", output=SearchResponse)
+@check_permission()
+async def api_search(datasette, request):
+    q = (request.args.get("q") or "").strip()
+
+    try:
+        limit = int(request.args.get("limit") or 20)
+    except (TypeError, ValueError):
+        limit = 20
+    # Cap the limit at 50, and keep it at least 1.
+    limit = max(1, min(limit, 50))
+
+    # Per plan §F: email is included by default but can be omitted on request.
+    include_email = _truthy(request.args.get("email"), default=True)
+
+    internal_db = datasette.get_internal_database()
+
+    if not q:
+        # Empty query → most-recently-updated profiles (capped).
+        rows = (
+            await internal_db.execute(
+                "SELECT actor_id, display_name, email"
+                " FROM datasette_user_profiles"
+                " ORDER BY updated_at DESC"
+                " LIMIT ?",
+                [limit],
+            )
+        ).rows
+    else:
+        like = f"%{q}%"
+        prefix = f"{q}%"
+        # Match across display_name / email / actor_id; surface prefix
+        # matches on display_name first, then alphabetical by display_name.
+        rows = (
+            await internal_db.execute(
+                "SELECT actor_id, display_name, email"
+                " FROM datasette_user_profiles"
+                " WHERE display_name LIKE ? OR email LIKE ? OR actor_id LIKE ?"
+                " ORDER BY CASE WHEN display_name LIKE ? THEN 0 ELSE 1 END,"
+                " display_name"
+                " LIMIT ?",
+                [like, like, like, prefix, limit],
+            )
+        ).rows
+
+    results = [
+        SearchResult(
+            id=row["actor_id"],
+            display_name=row["display_name"],
+            email=row["email"] if include_email else None,
+            avatar_url=datasette.urls.path(f"/-/profile/pic/{row['actor_id']}"),
+            kind="user",
+        )
+        for row in rows
+    ]
+
+    return Response.json(SearchResponse(results=results).model_dump())
 
 
 @router.GET("/-/api/user-profile/photo/(?P<actor_id>[^/]+)$")

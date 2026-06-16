@@ -21,6 +21,7 @@ export interface EditProfilePageData {
   avatar_icon_choices?: AvatarIconChoices;
   avatar_color_choices?: AvatarColorChoices;
   avatar_icon_svgs?: AvatarIconSvgs;
+  editable?: Editable;
   [k: string]: unknown;
 }
 export interface UserProfile {
@@ -40,4 +41,7 @@ export interface AvatarColorChoices {
 }
 export interface AvatarIconSvgs {
   [k: string]: string;
+}
+export interface Editable {
+  [k: string]: boolean;
 }
