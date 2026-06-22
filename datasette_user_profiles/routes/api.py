@@ -7,6 +7,7 @@ from datasette_plugin_router import Body
 from ..config import editable_fields
 from ..page_data import (
     DeletePhotoResponse,
+    ResolveResponse,
     SearchResponse,
     SearchResult,
     UpdateProfileRequest,
@@ -15,6 +16,7 @@ from ..page_data import (
     UploadPhotoResponse,
 )
 from ..router import router, check_permission
+from .. import resolve_profile_actors
 
 
 @router.POST("/-/api/user-profile/update$", output=UpdateProfileResponse)
@@ -242,6 +244,38 @@ async def api_search(datasette, request):
     ]
 
     return Response.json(SearchResponse(results=results).model_dump())
+
+
+@router.GET("/-/profiles/api/resolve$", output=ResolveResponse)
+@check_permission()
+async def api_resolve(datasette, request):
+    """Batch-resolve known actor ids to profile dicts (HTTP sibling of the
+    in-process ``resolve_profile_actors`` helper).
+
+    Unlike search, this takes a known set of ids (``?ids=clark,lois,bruce``)
+    and returns them keyed by id. Unknown ids are omitted from ``results`` —
+    the caller applies its own fallback for anything still unresolved.
+    """
+    # Accept comma-separated ids in one or more repeated `ids` params.
+    raw = ",".join(request.args.getlist("ids"))
+    ids = [part for part in (p.strip() for p in raw.split(",")) if part]
+
+    # Mirror search: email is included by default but can be omitted.
+    include_email = _truthy(request.args.get("email"), default=True)
+
+    actors = await resolve_profile_actors(datasette, ids)
+    results = {
+        actor_id: SearchResult(
+            id=actor["id"],
+            display_name=actor["display_name"],
+            email=actor["email"] if include_email else None,
+            avatar_url=actor["avatar_url"],
+            kind=actor["kind"],
+        )
+        for actor_id, actor in actors.items()
+    }
+
+    return Response.json(ResolveResponse(results=results).model_dump())
 
 
 @router.GET("/-/api/user-profile/photo/(?P<actor_id>[^/]+)$")

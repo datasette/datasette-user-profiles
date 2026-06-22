@@ -165,6 +165,102 @@ async def test_search_forbidden_actor_blocked():
     assert response.status_code == 403
 
 
+# --- Resolve API: /-/profiles/api/resolve ---
+
+
+@pytest.mark.asyncio
+async def test_resolve_happy_path():
+    ds = await _make_datasette()
+    response = await ds.client.get(
+        "/-/profiles/api/resolve?ids=alice,bob", cookies=_cookie(ds, "alice")
+    )
+    assert response.status_code == 200
+    results = response.json()["results"]
+    assert results == {
+        "alice": {
+            "id": "alice",
+            "display_name": "Alice Anderson",
+            "email": "alice@example.com",
+            "avatar_url": "/-/profile/pic/alice",
+            "kind": "user",
+        },
+        "bob": {
+            "id": "bob",
+            "display_name": "Bob Jones",
+            "email": "bob@example.com",
+            "avatar_url": "/-/profile/pic/bob",
+            "kind": "user",
+        },
+    }
+
+
+@pytest.mark.asyncio
+async def test_resolve_unknown_ids_omitted():
+    ds = await _make_datasette()
+    response = await ds.client.get(
+        "/-/profiles/api/resolve?ids=alice,nope", cookies=_cookie(ds, "alice")
+    )
+    assert response.status_code == 200
+    results = response.json()["results"]
+    # Unknown id is omitted entirely — caller applies its own fallback.
+    assert set(results) == {"alice"}
+    assert "nope" not in results
+
+
+@pytest.mark.asyncio
+async def test_resolve_email_can_be_omitted():
+    ds = await _make_datasette()
+    response = await ds.client.get(
+        "/-/profiles/api/resolve?ids=alice,bob&email=0", cookies=_cookie(ds, "alice")
+    )
+    assert response.status_code == 200
+    results = response.json()["results"]
+    assert all(r["email"] is None for r in results.values())
+    # Other fields still present.
+    assert results["alice"]["display_name"] == "Alice Anderson"
+
+
+@pytest.mark.asyncio
+async def test_resolve_empty_ids_returns_empty_results():
+    ds = await _make_datasette()
+    # Missing param and explicit-but-empty param both yield empty results.
+    for url in (
+        "/-/profiles/api/resolve",
+        "/-/profiles/api/resolve?ids=",
+        "/-/profiles/api/resolve?ids=,,",
+    ):
+        response = await ds.client.get(url, cookies=_cookie(ds, "alice"))
+        assert response.status_code == 200, url
+        assert response.json()["results"] == {}, url
+
+
+@pytest.mark.asyncio
+async def test_resolve_duplicate_ids_collapse():
+    ds = await _make_datasette()
+    response = await ds.client.get(
+        "/-/profiles/api/resolve?ids=alice,alice,alice", cookies=_cookie(ds, "alice")
+    )
+    assert response.status_code == 200
+    # Keyed by id, so duplicates collapse to a single entry.
+    assert set(response.json()["results"]) == {"alice"}
+
+
+@pytest.mark.asyncio
+async def test_resolve_unauthenticated_blocked():
+    ds = await _make_datasette()
+    response = await ds.client.get("/-/profiles/api/resolve?ids=alice")
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_resolve_forbidden_actor_blocked():
+    ds = await _make_datasette()
+    response = await ds.client.get(
+        "/-/profiles/api/resolve?ids=alice", cookies=_cookie(ds, "bob")
+    )
+    assert response.status_code == 403
+
+
 # --- resolve_profile_actors helper ---
 
 
