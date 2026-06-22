@@ -94,6 +94,12 @@ class SearchResponse(BaseModel):
     results: list[SearchResult] = []
 
 
+class ResolveResponse(BaseModel):
+    # Keyed by actor id. Unknown ids are omitted, so callers apply their own
+    # fallback for anything still unresolved (mirrors resolve_profile_actors).
+    results: dict[str, SearchResult] = {}
+
+
 __exports__ = [
     ProfilePageData,
     EditProfilePageData,

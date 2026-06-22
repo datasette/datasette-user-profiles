@@ -9,11 +9,7 @@ from . import hookspecs
 
 pm.add_hookspecs(hookspecs)
 
-# Import route modules to trigger route registration on the shared router
-from .routes import pages, api
 from .router import router, PROFILE_ACCESS_NAME
-
-_ = (pages, api)
 
 
 @hookimpl
@@ -79,6 +75,14 @@ async def resolve_profile_actors(datasette, actor_ids):
             "avatar_url": datasette.urls.path(f"/-/profile/pic/{actor_id}"),
         }
     return result
+
+
+# Import route modules to trigger route registration on the shared router.
+# This happens after resolve_profile_actors is defined above so that
+# routes.api can import it at module level without a circular import.
+from .routes import pages, api  # noqa: E402
+
+_ = (pages, api)
 
 
 def _datasette_acl_installed():
