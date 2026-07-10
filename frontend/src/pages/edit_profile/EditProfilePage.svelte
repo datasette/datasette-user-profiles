@@ -3,6 +3,15 @@
   import type { paths } from "../../../api.d.ts";
   import { loadPageData } from "../../page_data/load";
   import type { EditProfilePageData } from "../../page_data/EditProfilePageData.types";
+  import AvatarCropper from "./AvatarCropper.svelte";
+  import {
+    decodeImage,
+    exportAvatar,
+    formatBytes,
+    ImageDecodeError,
+    MIN_SOURCE_SIZE,
+    type CropRect,
+  } from "./image";
 
   const client = createClient<paths>({ baseUrl: "/" });
   const pageData = loadPageData<EditProfilePageData>();
@@ -95,29 +104,113 @@
     });
   }
 
-  function handleImageFile(file: File) {
+  // Crop / compress pipeline state
+  let cropBitmap: ImageBitmap | null = $state(null);
+  let originalFile: File | null = $state(null);
+  let sizeNote: string | null = $state(null);
+  let sourceWarning: string | null = $state(null);
+  let previewObjectUrl: string | null = null;
+
+  function setPreview(url: string | null) {
+    if (previewObjectUrl) URL.revokeObjectURL(previewObjectUrl);
+    previewObjectUrl = url && url.startsWith("blob:") ? url : null;
+    photoPreview = url;
+  }
+
+  async function handleImageFile(file: File) {
     if (!canEditAvatar) return;
-    if (!file.type.startsWith("image/")) {
+    photoError = null;
+    sourceWarning = null;
+    if (!file.type.startsWith("image/") && !/\.hei[cf]$/i.test(file.name)) {
       photoError = "Please select an image file";
       return;
     }
-    if (file.size > 1048576) {
-      const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
-      photoError = `Image must be under 1MB (yours is ${sizeMB}MB)`;
+    if (file.size > 20 * 1048576) {
+      photoError = `Image must be under 20MB (yours is ${formatBytes(file.size)})`;
       return;
     }
-    selectedFile = file;
-    photoError = null;
-    const reader = new FileReader();
-    reader.onload = () => {
-      photoPreview = reader.result as string;
+    // Small GIFs pass through untouched so animation survives; cropping or
+    // re-encoding through a canvas would freeze the first frame.
+    if (file.type === "image/gif" && file.size <= 1048576) {
+      selectedFile = file;
+      originalFile = null;
+      cropBitmap = null;
+      sizeNote = null;
+      setPreview(URL.createObjectURL(file));
+      return;
+    }
+    try {
+      const bitmap = await decodeImage(file);
+      if (Math.min(bitmap.width, bitmap.height) < MIN_SOURCE_SIZE) {
+        sourceWarning = `This image is only ${bitmap.width}×${bitmap.height} — it may look blurry`;
+      }
+      originalFile = file;
+      cropBitmap = bitmap;
+    } catch (e: any) {
+      photoError =
+        e instanceof ImageDecodeError ? e.message : "Couldn't read that image";
+    }
+  }
+
+  async function applyCrop(crop: CropRect) {
+    if (!cropBitmap || !originalFile) return;
+    try {
+      const blob = await exportAvatar(cropBitmap, crop);
+      const ext = blob.type === "image/webp" ? "webp" : "jpg";
+      selectedFile = new File([blob], `avatar.${ext}`, { type: blob.type });
+      setPreview(URL.createObjectURL(blob));
+      sizeNote =
+        blob.size < originalFile.size
+          ? `${formatBytes(originalFile.size)} → ${formatBytes(blob.size)}`
+          : formatBytes(blob.size);
+      photoError = null;
+    } catch (e: any) {
+      photoError = e.message;
+    }
+    cropBitmap = null;
+  }
+
+  function cancelCrop() {
+    cropBitmap = null;
+    if (!selectedFile) originalFile = null;
+  }
+
+  $effect(() => {
+    if (!cropBitmap) return;
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") cancelCrop();
     };
-    reader.readAsDataURL(file);
+    document.addEventListener("keydown", onEsc);
+    return () => document.removeEventListener("keydown", onEsc);
+  });
+
+  async function reopenCrop() {
+    if (!originalFile) return;
+    try {
+      cropBitmap = await decodeImage(originalFile);
+    } catch {
+      photoError = "Couldn't re-open that image";
+    }
+  }
+
+  function clearSelection() {
+    selectedFile = null;
+    originalFile = null;
+    sizeNote = null;
+    sourceWarning = null;
+    setPreview(
+      hasPhoto
+        ? `/-/api/user-profile/photo/${encodeURIComponent(profile.actor_id)}`
+        : null,
+    );
   }
 
   function onFileInput(e: Event) {
     const input = e.currentTarget as HTMLInputElement;
     const file = input.files?.[0];
+    // Reset so picking the same file again (e.g. after canceling the crop)
+    // still fires change
+    input.value = "";
     if (file) handleImageFile(file);
   }
 
@@ -159,8 +252,10 @@
     try {
       await client.POST("/-/api/user-profile/photo/delete" as any, { body: {} });
       hasPhoto = false;
-      photoPreview = null;
       selectedFile = null;
+      originalFile = null;
+      sizeNote = null;
+      setPreview(null);
     } catch (e: any) {
       photoError = e.message;
     } finally {
@@ -197,7 +292,11 @@
         }
         hasPhoto = true;
         selectedFile = null;
-        photoPreview = `/-/api/user-profile/photo/${encodeURIComponent(profile.actor_id)}?t=${Date.now()}`;
+        originalFile = null;
+        sizeNote = null;
+        setPreview(
+          `/-/api/user-profile/photo/${encodeURIComponent(profile.actor_id)}?t=${Date.now()}`,
+        );
       }
 
       // Save profile fields
@@ -246,22 +345,29 @@
       <div class="photo-info">
         <h2>Profile Photo</h2>
         {#if canEditAvatar}
-          <p class="hint">Drag/drop, or paste an image.<br/>1MB max, JPG, PNG, or GIF</p>
+          <p class="hint">Drag/drop, or paste an image.<br/>Large images are cropped and resized in your browser.</p>
           <div class="photo-actions">
             <label class="file-btn">
               {hasPhoto || selectedFile ? "Change photo" : "Upload photo"}
               <input type="file" accept="image/*" onchange={onFileInput} hidden />
             </label>
+            {#if selectedFile && originalFile}
+              <button type="button" onclick={reopenCrop} class="clear-btn">
+                Adjust crop
+              </button>
+            {/if}
             {#if selectedFile}
-              <button
-                type="button"
-                onclick={() => { selectedFile = null; photoPreview = hasPhoto ? `/-/api/user-profile/photo/${encodeURIComponent(profile.actor_id)}` : null; }}
-                class="clear-btn"
-              >
+              <button type="button" onclick={clearSelection} class="clear-btn">
                 Undo
               </button>
             {/if}
           </div>
+          {#if sizeNote}
+            <p class="size-note">{sizeNote}</p>
+          {/if}
+          {#if sourceWarning}
+            <p class="warning">{sourceWarning}</p>
+          {/if}
         {:else}
           <p class="hint">Avatar is managed elsewhere and can't be changed here.</p>
         {/if}
@@ -321,6 +427,12 @@
             </div>
           {/if}
         </div>
+        {#if selectedFile && photoPreview}
+          <div class="size-previews" title="How your photo looks at smaller sizes">
+            <img src={photoPreview} alt="" style="width: 40px; height: 40px;" />
+            <img src={photoPreview} alt="" style="width: 24px; height: 24px;" />
+          </div>
+        {/if}
         {#if canEditAvatar}
           <div class="below-avatar">
             {#if hasPhoto && !selectedFile}
@@ -338,6 +450,24 @@
       <p class="error">{photoError}</p>
     {/if}
   </section>
+
+  {#if cropBitmap}
+    <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
+    <div
+      class="crop-modal-backdrop"
+      onclick={(e) => { if (e.target === e.currentTarget) cancelCrop(); }}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Crop photo"
+      tabindex="-1"
+    >
+      <div class="crop-modal">
+        <h2>Crop your photo</h2>
+        <p class="hint">Drag to reposition, scroll or slide to zoom.</p>
+        <AvatarCropper bitmap={cropBitmap} onapply={applyCrop} oncancel={cancelCrop} />
+      </div>
+    </div>
+  {/if}
 
   <form onsubmit={handleSubmit}>
     <label for="display-name">
@@ -515,6 +645,47 @@
     color: #888;
     margin: 0.25rem 0 0;
     line-height: 1.4;
+  }
+  .size-note {
+    font-size: 0.75rem;
+    color: #060;
+    margin: 0.5rem 0 0;
+  }
+  .warning {
+    font-size: 0.75rem;
+    color: #a60;
+    margin: 0.5rem 0 0;
+  }
+  .size-previews {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.4rem;
+  }
+  .size-previews img {
+    border-radius: 50%;
+    object-fit: cover;
+  }
+
+  .crop-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+  }
+  .crop-modal {
+    background: white;
+    border-radius: 8px;
+    padding: 1.25rem;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
+  }
+  .crop-modal h2 {
+    margin: 0;
+  }
+  .crop-modal .hint {
+    margin: 0.25rem 0 0.75rem;
   }
 
   .avatar-anchor {
