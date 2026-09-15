@@ -4,6 +4,7 @@ from typing import Annotated
 from datasette import Response
 from datasette_plugin_router import Body
 
+from ..avatar import avatar_url
 from ..config import editable_fields
 from ..page_data import (
     DeletePhotoResponse,
@@ -190,6 +191,16 @@ def _truthy(value, default=True):
     return str(value).strip().lower() not in ("0", "false", "no", "off", "")
 
 
+# Selects only the photo's updated_at from the photos table, never the blob.
+_SEARCH_SELECT = (
+    "SELECT p.actor_id, p.display_name, p.email,"
+    " p.avatar_icon, p.avatar_color, p.updated_at,"
+    " ph.updated_at AS photo_updated_at"
+    " FROM datasette_user_profiles p"
+    " LEFT JOIN datasette_user_profile_photos ph ON ph.actor_id = p.actor_id"
+)
+
+
 @router.GET("/-/profiles/api/search$", output=SearchResponse)
 @check_permission()
 async def api_search(datasette, request):
@@ -211,10 +222,7 @@ async def api_search(datasette, request):
         # Empty query → most-recently-updated profiles (capped).
         rows = (
             await internal_db.execute(
-                "SELECT actor_id, display_name, email"
-                " FROM datasette_user_profiles"
-                " ORDER BY updated_at DESC"
-                " LIMIT ?",
+                f"{_SEARCH_SELECT} ORDER BY p.updated_at DESC LIMIT ?",
                 [limit],
             )
         ).rows
@@ -225,11 +233,10 @@ async def api_search(datasette, request):
         # matches on display_name first, then alphabetical by display_name.
         rows = (
             await internal_db.execute(
-                "SELECT actor_id, display_name, email"
-                " FROM datasette_user_profiles"
-                " WHERE display_name LIKE ? OR email LIKE ? OR actor_id LIKE ?"
-                " ORDER BY CASE WHEN display_name LIKE ? THEN 0 ELSE 1 END,"
-                " display_name"
+                f"{_SEARCH_SELECT}"
+                " WHERE p.display_name LIKE ? OR p.email LIKE ? OR p.actor_id LIKE ?"
+                " ORDER BY CASE WHEN p.display_name LIKE ? THEN 0 ELSE 1 END,"
+                " p.display_name"
                 " LIMIT ?",
                 [like, like, like, prefix, limit],
             )
@@ -240,7 +247,14 @@ async def api_search(datasette, request):
             id=row["actor_id"],
             display_name=row["display_name"],
             email=row["email"] if include_email else None,
-            avatar_url=datasette.urls.path(f"/-/profile/pic/{row['actor_id']}"),
+            avatar_url=avatar_url(
+                datasette,
+                row["actor_id"],
+                photo_updated_at=row["photo_updated_at"],
+                avatar_icon=row["avatar_icon"],
+                avatar_color=row["avatar_color"],
+                profile_updated_at=row["updated_at"],
+            ),
             kind="user",
         )
         for row in rows

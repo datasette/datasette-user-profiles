@@ -1,3 +1,5 @@
+from urllib.parse import unquote
+
 from pydantic import BaseModel
 
 from datasette import Response
@@ -137,6 +139,7 @@ def _collect_sections(datasette) -> list[ProfileSectionData]:
 @router.GET("/-/profile/(?P<actor_id>[^/]+)$")
 @check_permission()
 async def profile_page(datasette, request, actor_id: str):
+    actor_id = unquote(actor_id)
     profile = await get_profile(datasette, actor_id)
     current_actor_id = request.actor.get("id") if request.actor else None
     if current_actor_id is not None:
@@ -162,8 +165,11 @@ async def profile_page(datasette, request, actor_id: str):
 @router.GET("/-/profile/pic/(?P<actor_id>[^/]+)$")
 @check_permission()
 async def profile_pic(datasette, request, actor_id: str):
+    # Keep the 404 rules here in sync with avatar.avatar_url(). Any ?v= query
+    # string is a cache-busting stamp and is ignored.
     from ..avatar import generate_avatar_svg
 
+    actor_id = unquote(actor_id)
     internal_db = datasette.get_internal_database()
     # Try uploaded photo first
     row = (

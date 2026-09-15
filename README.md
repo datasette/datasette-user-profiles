@@ -96,12 +96,15 @@ are alphabetical by `display_name`. Response shape:
       "id": "alice",
       "display_name": "Alice Anderson",
       "email": "alice@example.com",
-      "avatar_url": "/-/profile/pic/alice",
+      "avatar_url": "/-/profile/pic/alice?v=2026-05-20T10:00:00.000",
       "kind": "user"
     }
   ]
 }
 ```
+
+`avatar_url` follows the same rules as in `resolve_profile_actors()` below:
+`null` when there's no picture to show.
 
 `kind` is always `"user"` — profiles only knows users. Callers that also want
 agents (or other identities) query those sources separately and merge
@@ -119,12 +122,21 @@ Known users resolve to:
   "display_name": "Alice Anderson",
   "email": "alice@example.com",
   "kind": "user",
-  "avatar_url": "/-/profile/pic/alice"
+  "avatar_url": "/-/profile/pic/alice?v=2026-05-20T10:00:00.000",
+  "bio": "Builds things."
 }
 ```
 
 IDs without a matching profile are omitted from the map — the caller decides
 how to fall back (typically a bare `{"id": <id>}`).
+
+`avatar_url` is **nullable**: it's `null` when the user has neither an uploaded
+photo nor a valid icon avatar, i.e. exactly when `/-/profile/pic/<id>` would
+404, so you can render your own fallback instead of a broken image. Otherwise
+it carries a `?v=` version stamp that changes whenever the picture does (photo
+uploaded, replaced or removed, icon changed), so it's safe to cache. The same
+rules apply to `/-/profiles/api/search` and `/-/profiles/api/resolve`. `bio`
+may also be `null`.
 
 ### Consolidation note
 
@@ -160,11 +172,14 @@ from datasette_user_profiles import resolve_profile_actors
 actors = await resolve_profile_actors(datasette, ["alice", "agent-1"])
 # {"alice": {"id": "alice", "display_name": "Alice Anderson",
 #            "email": "alice@example.com", "kind": "user",
-#            "avatar_url": "/-/profile/pic/alice"}}
+#            "avatar_url": "/-/profile/pic/alice?v=2026-05-20T10:00:00.000",
+#            "bio": "Builds things."}}
 ```
 
 It returns a `{actor_id: {...}}` map for the IDs that have a profile, and omits
 the rest so you can merge it with other sources and apply your own fallback.
+`avatar_url` is `null` when there's no picture to show, and versioned with
+`?v=` otherwise (see the output shape above).
 
 If you want profiles to back Datasette's core `actors_from_ids`, wire it up
 from a plugin you control — designating a single owner for the hook and

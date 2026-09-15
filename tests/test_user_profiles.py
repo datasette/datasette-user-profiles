@@ -136,7 +136,7 @@ async def test_search_result_shape():
         "id": "alice",
         "display_name": "Alice Anderson",
         "email": "alice@example.com",
-        "avatar_url": "/-/profile/pic/alice",
+        "avatar_url": None,
         "kind": "user",
     }
 
@@ -181,14 +181,14 @@ async def test_resolve_happy_path():
             "id": "alice",
             "display_name": "Alice Anderson",
             "email": "alice@example.com",
-            "avatar_url": "/-/profile/pic/alice",
+            "avatar_url": None,
             "kind": "user",
         },
         "bob": {
             "id": "bob",
             "display_name": "Bob Jones",
             "email": "bob@example.com",
-            "avatar_url": "/-/profile/pic/bob",
+            "avatar_url": None,
             "kind": "user",
         },
     }
@@ -275,14 +275,17 @@ async def test_resolve_profile_actors_returns_known_users_only():
         "display_name": "Alice Anderson",
         "email": "alice@example.com",
         "kind": "user",
-        "avatar_url": "/-/profile/pic/alice",
+        # Seeded profiles have no photo or icon, so nothing to show.
+        "avatar_url": None,
+        "bio": None,
     }
     assert actors["bob"] == {
         "id": "bob",
         "display_name": "Bob Jones",
         "email": "bob@example.com",
         "kind": "user",
-        "avatar_url": "/-/profile/pic/bob",
+        "avatar_url": None,
+        "bio": None,
     }
     # Unknown id is omitted entirely — callers apply their own fallback.
     assert "ghost" not in actors
@@ -512,3 +515,181 @@ async def test_edit_page_exposes_editable_map():
     assert response.status_code == 200
     # The page_data JSON embedded in the page carries the editable map.
     assert '"email": false' in response.text or '"email":false' in response.text
+
+
+# --- avatar_url: null when nothing to show, versioned when there is ---
+
+PNG_B64 = (
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk"
+    "+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+)
+
+
+async def _avatar_urls(ds, actor_id):
+    """avatar_url for one actor from all three sources; asserts they agree."""
+    from datasette_user_profiles import resolve_profile_actors
+
+    helper = (await resolve_profile_actors(ds, [actor_id]))[actor_id]["avatar_url"]
+    resolved = (
+        await ds.client.get(
+            f"/-/profiles/api/resolve?ids={actor_id}", cookies=_cookie(ds, "alice")
+        )
+    ).json()["results"][actor_id]["avatar_url"]
+    searched = [
+        r["avatar_url"]
+        for r in (
+            await ds.client.get(
+                f"/-/profiles/api/search?q={actor_id}&limit=50",
+                cookies=_cookie(ds, "alice"),
+            )
+        ).json()["results"]
+        if r["id"] == actor_id
+    ]
+    assert searched == [helper]
+    assert resolved == helper
+    return helper
+
+
+async def _set_avatar(ds, actor_id, icon, color):
+    await ds.get_internal_database().execute_write(
+        "UPDATE datasette_user_profiles SET avatar_icon = ?, avatar_color = ?"
+        " WHERE actor_id = ?",
+        [icon, color, actor_id],
+    )
+
+
+async def _pic_status(ds, actor_id):
+    response = await ds.client.get(
+        f"/-/profile/pic/{actor_id}", cookies=_cookie(ds, "alice")
+    )
+    return response.status_code
+
+
+def test_valid_avatar_predicate():
+    from datasette_user_profiles.avatar import generate_avatar_svg, valid_avatar
+
+    assert valid_avatar("star", "#1e66f5")
+    assert generate_avatar_svg("star", "#1e66f5")
+    for icon, color in [
+        ("star", None),
+        (None, "#1e66f5"),
+        ("nope", "#1e66f5"),
+        ("star", "blue"),
+    ]:
+        assert not valid_avatar(icon, color)
+        if icon is not None and color is not None:
+            assert generate_avatar_svg(icon, color) is None
+
+
+@pytest.mark.asyncio
+async def test_avatar_url_null_without_photo_or_icon():
+    ds = await _make_datasette()
+    assert await _avatar_urls(ds, "bob") is None
+    assert await _pic_status(ds, "bob") == 404
+
+
+@pytest.mark.asyncio
+async def test_avatar_url_null_for_icon_without_colour():
+    ds = await _make_datasette()
+    await _set_avatar(ds, "bob", "star", None)
+    assert await _avatar_urls(ds, "bob") is None
+    assert await _pic_status(ds, "bob") == 404
+
+
+@pytest.mark.asyncio
+async def test_avatar_url_null_for_unknown_icon():
+    ds = await _make_datasette()
+    await _set_avatar(ds, "bob", "not-an-icon", "#1e66f5")
+    assert await _avatar_urls(ds, "bob") is None
+    assert await _pic_status(ds, "bob") == 404
+
+
+@pytest.mark.asyncio
+async def test_avatar_url_versioned_and_loads():
+    ds = await _make_datasette()
+    await _set_avatar(ds, "bob", "star", "#1e66f5")
+    url = await _avatar_urls(ds, "bob")
+    assert url == "/-/profile/pic/bob?v=2026-05-22T00:00:00.000"
+    response = await ds.client.get(url, cookies=_cookie(ds, "alice"))
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/svg+xml"
+
+
+@pytest.mark.asyncio
+async def test_avatar_url_honours_base_url_and_quotes_ids():
+    ds = Datasette(
+        memory=True,
+        config={"permissions": {"profile_access": {"id": "alice"}}},
+        settings={"base_url": "/prefix/"},
+    )
+    await ds.invoke_startup()
+    await ds.get_internal_database().execute_write(
+        "INSERT INTO datasette_user_profiles"
+        " (actor_id, avatar_icon, avatar_color, updated_at)"
+        " VALUES ('a b@x.com', 'star', '#1e66f5', '2026-05-20T00:00:00.000')"
+    )
+    from datasette_user_profiles import resolve_profile_actors
+
+    url = (await resolve_profile_actors(ds, ["a b@x.com"]))["a b@x.com"]["avatar_url"]
+    assert url == "/prefix/-/profile/pic/a%20b@x.com?v=2026-05-20T00:00:00.000"
+    # The test client doesn't apply base_url, so strip it before fetching.
+    response = await ds.client.get(
+        url.removeprefix("/prefix"), cookies=_cookie(ds, "alice")
+    )
+    assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_avatar_url_version_changes_with_picture():
+    ds = await _make_datasette()
+    cookies = _cookie(ds, "alice")
+
+    # Icon set through the API: versioned by the profile's updated_at.
+    response = await ds.client.post(
+        "/-/api/user-profile/update",
+        json={"avatar_icon": "star", "avatar_color": "#1e66f5"},
+        cookies=cookies,
+    )
+    assert response.json() == {"ok": True, "error": None}
+    icon_url = await _avatar_urls(ds, "alice")
+    assert icon_url is not None and icon_url.startswith("/-/profile/pic/alice?v=")
+
+    # Photo upload: versioned by the photo's updated_at.
+    await ds.get_internal_database().execute_write(
+        "UPDATE datasette_user_profiles SET updated_at = '2026-01-01T00:00:00.000'"
+        " WHERE actor_id = 'alice'"
+    )
+    icon_url = await _avatar_urls(ds, "alice")
+    response = await ds.client.post(
+        "/-/api/user-profile/photo",
+        json={"photo_data": PNG_B64, "content_type": "image/png"},
+        cookies=cookies,
+    )
+    assert response.json()["ok"]
+    photo_url = await _avatar_urls(ds, "alice")
+    assert photo_url is not None and photo_url != icon_url
+    response = await ds.client.get(photo_url, cookies=cookies)
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/png"
+
+    # Photo delete: falls back to the icon, and the version changes back.
+    response = await ds.client.post(
+        "/-/api/user-profile/photo/delete", json={}, cookies=cookies
+    )
+    assert response.json()["ok"]
+    after_delete = await _avatar_urls(ds, "alice")
+    assert after_delete == icon_url
+    assert after_delete != photo_url
+    response = await ds.client.get(after_delete, cookies=cookies)
+    assert response.headers["content-type"] == "image/svg+xml"
+
+    # Icon change: the profile's updated_at moves, so the version does too.
+    response = await ds.client.post(
+        "/-/api/user-profile/update",
+        json={"avatar_icon": "moon"},
+        cookies=cookies,
+    )
+    assert response.json()["ok"]
+    after_icon_change = await _avatar_urls(ds, "alice")
+    assert after_icon_change is not None
+    assert after_icon_change != after_delete

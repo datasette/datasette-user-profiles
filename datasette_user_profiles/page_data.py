@@ -86,7 +86,9 @@ class SearchResult(BaseModel):
     id: str
     display_name: str | None = None
     email: str | None = None
-    avatar_url: str
+    # None when there's no photo or valid icon avatar; otherwise versioned
+    # with ?v= so it can be cached.
+    avatar_url: str | None = None
     kind: str = "user"
 
 

@@ -174,6 +174,16 @@ export interface paths {
                          * @default null
                          */
                         email?: string | null;
+                        /**
+                         * Avatar Icon
+                         * @default null
+                         */
+                        avatar_icon?: string | null;
+                        /**
+                         * Avatar Color
+                         * @default null
+                         */
+                        avatar_color?: string | null;
                     };
                 };
             };
@@ -301,6 +311,90 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/-/profiles/api/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /**
+                             * Results
+                             * @default []
+                             */
+                            results: components["schemas"]["SearchResult"][];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/-/profiles/api/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /**
+                             * Results
+                             * @default {}
+                             */
+                            results: {
+                                [key: string]: components["schemas"]["SearchResult"];
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/-/api/user-profile/photo/{actor_id}": {
         parameters: {
             query?: never;
@@ -339,7 +433,33 @@ export interface paths {
 }
 export type webhooks = Record<string, never>;
 export interface components {
-    schemas: never;
+    schemas: {
+        /** SearchResult */
+        SearchResult: {
+            /** Id */
+            id: string;
+            /**
+             * Display Name
+             * @default null
+             */
+            display_name: string | null;
+            /**
+             * Email
+             * @default null
+             */
+            email: string | null;
+            /**
+             * Avatar Url
+             * @default null
+             */
+            avatar_url: string | null;
+            /**
+             * Kind
+             * @default user
+             */
+            kind: string;
+        };
+    };
     responses: never;
     parameters: never;
     requestBodies: never;
