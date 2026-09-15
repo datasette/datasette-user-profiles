@@ -63,7 +63,6 @@ check:
 # Development servers
 dev *flags:
     DATASETTE_SECRET=abc123 uv run \
-      --with datasette-debug-gotham \
       datasette \
         -s permissions.profile_access.id "*" \
         --plugins-dir=sample \
