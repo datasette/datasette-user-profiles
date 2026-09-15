@@ -200,6 +200,70 @@ def actors_from_ids(datasette, actor_ids):
     return inner
 ```
 
+## Profile hovercards
+
+Any plugin can show a small profile card (avatar, name, `@id`, bio, a link to
+the full profile) when someone hovers or keyboard-focuses a person's name. Load
+one script and mark the elements:
+
+```html
+<a href="/-/profile/alice" data-profile-hovercard>Alice</a>        <!-- id from href -->
+<span class="mention" data-profile-hovercard="alice">@Alice</span> <!-- explicit id -->
+
+<script type="module" src="/-/profiles/hovercard.js"></script>
+```
+
+In server-rendered templates, use the `base_url`-aware helper:
+
+```python
+from datasette_user_profiles import hovercard_script_url
+
+@hookimpl
+def extra_template_vars(datasette):
+    return {"profile_hovercard_script_url": hovercard_script_url(datasette)}
+```
+
+- The card opens after 500 ms of hover, or on `:focus-visible` focus, and
+  closes 300 ms after the pointer leaves both the trigger and the card. Touch
+  is ignored, so a tap just follows the link.
+- Any key press closes an open card. Escape is also claimed
+  (`preventDefault` + `stopPropagation`) while a card is open, and never
+  touched while it isn't.
+- Elements that can't take focus (e.g. atoms in a `contenteditable` editor)
+  can open and close the card programmatically:
+
+  ```js
+  mentionEl.dispatchEvent(new CustomEvent("profile-hovercard:open", { bubbles: true }));
+  document.dispatchEvent(new CustomEvent("profile-hovercard:close"));
+  ```
+- Ids without a profile still get a card, named through core
+  `actors_from_ids`, marked "No profile yet". Viewers without `profile_access`
+  never see a card; the link still works.
+- Drop any `title` attribute from triggers, or the native tooltip competes
+  with the card.
+
+The data comes from `GET /-/profiles/api/hovercard/<actor_id>`, which returns
+`{id, name, bio, avatar_url, profile_url, has_profile}`.
+
+### Theming
+
+The card follows the host page's `color-scheme` (not `prefers-color-scheme`).
+Map your palette onto its custom properties once:
+
+```css
+:root {
+  --profile-hovercard-bg: var(--pp-bg);
+  --profile-hovercard-fg: var(--pp-fg);
+  --profile-hovercard-muted: var(--pp-fg-muted);
+  --profile-hovercard-border: var(--pp-border);
+  --profile-hovercard-accent: var(--pp-accent);
+}
+```
+
+`--profile-hovercard-radius`, `-shadow` and `-font` are also available, and
+`profile-hovercard::part(card | avatar | name | handle | bio | footer)` reaches
+anything deeper. `just dev` serves a demo at `/-/profiles/hovercard-demo`.
+
 ## Seeding profiles from other plugins
 
 Profiles are normally created when a user visits their edit page. But plugins

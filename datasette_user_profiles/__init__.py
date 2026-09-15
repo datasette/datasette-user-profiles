@@ -94,6 +94,17 @@ async def resolve_profile_actors(datasette, actor_ids):
     return result
 
 
+def hovercard_script_url(datasette) -> str:
+    """URL of the profile hovercard script, for server-rendered templates::
+
+        <script type="module" src="{{ hovercard_script_url }}"></script>
+
+    It redirects to the built (or Vite dev server) module, and honours
+    ``base_url``.
+    """
+    return datasette.urls.path("/-/profiles/hovercard.js")
+
+
 # Import route modules to trigger route registration on the shared router.
 # This happens after resolve_profile_actors is defined above so that
 # routes.api can import it at module level without a circular import.

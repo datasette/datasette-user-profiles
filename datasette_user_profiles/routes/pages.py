@@ -1,9 +1,11 @@
+from pathlib import Path
 from urllib.parse import unquote
 
 from pydantic import BaseModel
 
 from datasette import Response
 from datasette.plugins import pm
+from datasette_vite import vite_js_urls
 
 from ..page_data import (
     EditProfilePageData,
@@ -238,3 +240,34 @@ async def edit_profile_page(datasette, request):
             editable=editable_fields(datasette),
         ),
     )
+
+
+HOVERCARD_ENTRYPOINT = "src/hovercard/index.ts"
+# Directory holding Vite's manifest.json; None means the package directory.
+# Tests point this at a fixture manifest.
+HOVERCARD_MANIFEST_DIR: Path | None = None
+
+
+@router.GET("/-/profiles/hovercard.js$")
+async def hovercard_js(datasette, request):
+    """Redirect to the hovercard ES module.
+
+    Not permission-gated: it's just code, and the card API it calls is. Points
+    at the hashed build file from manifest.json, or at the Vite dev server
+    when ``plugins.datasette-vite.dev_ports`` (or ``dev_paths``) is set.
+    """
+    try:
+        urls = vite_js_urls(
+            datasette,
+            HOVERCARD_ENTRYPOINT,
+            plugin_package="datasette_user_profiles",
+            manifest_dir=HOVERCARD_MANIFEST_DIR,
+        )
+    except ValueError:
+        return Response.text(
+            f"Hovercard script not built: {HOVERCARD_ENTRYPOINT} is missing from"
+            " manifest.json. Run `just frontend`.",
+            status=404,
+        )
+    # [{"url", "module"}, ...]: in dev mode [@vite/client, entry], else [entry].
+    return Response.redirect(urls[-1]["url"])

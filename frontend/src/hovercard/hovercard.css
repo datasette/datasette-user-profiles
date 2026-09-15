@@ -1,0 +1,128 @@
+/* Shadow-root styles for <profile-hovercard>. Imported with `?inline` so the
+   build stays a single JS file (a separate CSS asset would never be loaded by
+   a plain <script src=…hovercard.js>). */
+
+/* :host rules beat the UA [popover] styles (inset, margin, border, padding,
+   background, overflow, color), which would otherwise leak into the card. */
+:host {
+  position: fixed;
+  inset: auto;
+  width: auto;
+  height: auto;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  overflow: visible;
+  color-scheme: inherit;
+  --_bg: var(--profile-hovercard-bg, light-dark(#fff, #1f2328));
+  --_fg: var(--profile-hovercard-fg, light-dark(#1d1d1f, #ececef));
+  --_muted: var(--profile-hovercard-muted, light-dark(#6b6b73, #9a9aa3));
+  --_border: var(--profile-hovercard-border, light-dark(#e2e2e2, #3a3a40));
+  --_accent: var(--profile-hovercard-accent, light-dark(#1e66f5, #7aa2ff));
+  --_radius: var(--profile-hovercard-radius, 10px);
+  --_shadow: var(
+    --profile-hovercard-shadow,
+    light-dark(
+      0 10px 30px -8px rgb(0 0 0 / 0.22),
+      0 12px 32px -8px rgb(0 0 0 / 0.7)
+    )
+  );
+  font: var(
+    --profile-hovercard-font,
+    14px/1.45 system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif
+  );
+  color: var(--_fg);
+}
+.card {
+  box-sizing: border-box;
+  width: min(300px, calc(100vw - 16px));
+  background: var(--_bg);
+  border: 1px solid var(--_border);
+  border-radius: var(--_radius);
+  box-shadow: var(--_shadow);
+  padding: 14px 14px 0;
+  opacity: 0;
+  transform: translateY(var(--_dy, 4px));
+  transition:
+    opacity 120ms ease,
+    transform 120ms ease;
+}
+:host([data-shown]) .card {
+  opacity: 1;
+  transform: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .card {
+    transition: none;
+    transform: none;
+  }
+}
+.head {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  flex: none;
+  object-fit: cover;
+  display: grid;
+  place-items: center;
+  font-weight: 600;
+  font-size: 20px;
+  background: var(--_border);
+  color: var(--_muted);
+}
+.names {
+  min-width: 0;
+}
+.name {
+  font-weight: 600;
+  font-size: 15px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.handle {
+  color: var(--_muted);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bio,
+.empty {
+  margin: 10px 0 0;
+}
+.bio {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.empty {
+  color: var(--_muted);
+  font-style: italic;
+}
+.footer {
+  margin-top: 12px;
+  border-top: 1px solid var(--_border);
+  padding: 9px 0 10px;
+  font-size: 13px;
+}
+.footer a {
+  color: var(--_accent);
+  text-decoration: none;
+  font-weight: 500;
+}
+.footer a:hover {
+  text-decoration: underline;
+}

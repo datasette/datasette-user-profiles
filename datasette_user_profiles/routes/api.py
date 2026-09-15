@@ -1,13 +1,15 @@
 import base64
 from typing import Annotated
+from urllib.parse import unquote
 
 from datasette import Response
 from datasette_plugin_router import Body
 
-from ..avatar import avatar_url
+from ..avatar import avatar_url, quote_actor_id
 from ..config import editable_fields
 from ..page_data import (
     DeletePhotoResponse,
+    ProfileCard,
     ResolveResponse,
     SearchResponse,
     SearchResult,
@@ -293,6 +295,41 @@ async def api_resolve(datasette, request):
     }
 
     return Response.json(ResolveResponse(results=results).model_dump())
+
+
+@router.GET("/-/profiles/api/hovercard/(?P<actor_id>[^/]+)$", output=ProfileCard)
+@check_permission()
+async def api_hovercard(datasette, request, actor_id: str):
+    """Everything the profile hovercard shows for one actor.
+
+    Answers every id with a 200: the name falls back from the profile's
+    display_name to core ``actors_from_ids`` to the id itself, so the card
+    agrees with however the host page already named that actor.
+    """
+    actor_id = unquote(actor_id)
+    profile = (await resolve_profile_actors(datasette, [actor_id])).get(actor_id)
+
+    name = profile["display_name"] if profile else None
+    if not name:
+        actors = await datasette.actors_from_ids([actor_id])
+        actor = actors.get(actor_id) or {}
+        # Same key order as datasette-paper's resolve_actor_profiles, so the
+        # card agrees with the mention chip it opened from.
+        name = actor.get("display_name") or actor.get("name") or actor.get("username")
+    if not name:
+        name = actor_id
+
+    card = ProfileCard(
+        id=actor_id,
+        name=name,
+        bio=profile["bio"] if profile else None,
+        avatar_url=profile["avatar_url"] if profile else None,
+        profile_url=datasette.urls.path(f"/-/profile/{quote_actor_id(actor_id)}"),
+        has_profile=profile is not None,
+    )
+    return Response.json(
+        card.model_dump(), headers={"Cache-Control": "private, max-age=60"}
+    )
 
 
 @router.GET("/-/api/user-profile/photo/(?P<actor_id>[^/]+)$")

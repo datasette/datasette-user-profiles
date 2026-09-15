@@ -102,6 +102,17 @@ class ResolveResponse(BaseModel):
     results: dict[str, SearchResult] = {}
 
 
+class ProfileCard(BaseModel):
+    model_config = ConfigDict(coerce_numbers_to_str=True)
+
+    id: str
+    name: str  # profile display_name → actors_from_ids display_name/name/username → id
+    bio: str | None = None
+    avatar_url: str | None = None  # null → client draws a grey initial
+    profile_url: str  # datasette.urls.path(...), base_url-aware
+    has_profile: bool
+
+
 __exports__ = [
     ProfilePageData,
     EditProfilePageData,

@@ -140,6 +140,39 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/-/profiles/hovercard.js": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/-/api/user-profile/update": {
         parameters: {
             query?: never;
@@ -382,6 +415,62 @@ export interface paths {
                             results: {
                                 [key: string]: components["schemas"]["SearchResult"];
                             };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/-/profiles/api/hovercard/{actor_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    actor_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Id */
+                            id: string;
+                            /** Name */
+                            name: string;
+                            /**
+                             * Bio
+                             * @default null
+                             */
+                            bio: string | null;
+                            /**
+                             * Avatar Url
+                             * @default null
+                             */
+                            avatar_url: string | null;
+                            /** Profile Url */
+                            profile_url: string;
+                            /** Has Profile */
+                            has_profile: boolean;
                         };
                     };
                 };
