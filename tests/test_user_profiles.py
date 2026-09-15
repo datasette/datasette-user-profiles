@@ -427,6 +427,29 @@ async def test_update_changes_all_fields_by_default():
 
 
 @pytest.mark.asyncio
+async def test_update_omitted_fields_are_kept():
+    ds = await _make_datasette()
+    cookies = _cookie(ds, "alice")
+    await ds.client.post(
+        "/-/api/user-profile/update",
+        json={"display_name": "Alice A.", "bio": "Hi", "email": "a@example.com"},
+        cookies=cookies,
+    )
+    response = await ds.client.post(
+        "/-/api/user-profile/update",
+        json={"avatar_icon": "star", "avatar_color": "#ff0000", "bio": None},
+        cookies=cookies,
+    )
+    assert response.status_code == 200
+    row = await _get_profile_row(ds, "alice")
+    assert row["display_name"] == "Alice A."
+    assert row["email"] == "a@example.com"
+    assert row["bio"] is None
+    assert row["avatar_icon"] == "star"
+    assert row["avatar_color"] == "#ff0000"
+
+
+@pytest.mark.asyncio
 async def test_update_preserves_locked_field():
     ds = await _make_datasette({"editable_fields": {"email": False}})
     response = await ds.client.post(

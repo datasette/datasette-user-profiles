@@ -3,6 +3,8 @@
   import type { paths } from "../../../api.d.ts";
   import { loadPageData } from "../../page_data/load";
   import type { EditProfilePageData } from "../../page_data/EditProfilePageData.types";
+  import AvatarDialog, { type AvatarDraft } from "./AvatarDialog.svelte";
+  import AvatarPreview from "./AvatarPreview.svelte";
 
   const client = createClient<paths>({ baseUrl: "/" });
   const pageData = loadPageData<EditProfilePageData>();
@@ -23,65 +25,41 @@
 
   const iconChoices = pageData.avatar_icon_choices ?? [];
   const colorChoices = pageData.avatar_color_choices ?? {};
-  const colorEntries = Object.entries(colorChoices);
   const iconSvgs = pageData.avatar_icon_svgs ?? {};
-  let avatarIcon = $state(profile.avatar_icon ?? "");
-  let avatarColor = $state(profile.avatar_color ?? "");
-  let pickerOpen = $state(false);
-  let anchorEl: HTMLDivElement;
+  const letter = (profile.display_name || profile.actor_id).charAt(0).toUpperCase();
 
-  function openPicker() {
-    if (pickerOpen) { pickerOpen = false; return; }
-    if (!avatarIcon && iconChoices.length) {
-      avatarIcon = iconChoices[0]!;
-    }
-    if (!avatarColor && colorEntries.length) {
-      const idx = Math.floor(Math.random() * Math.min(4, colorEntries.length));
-      avatarColor = colorEntries[idx]![1];
-    }
-    pickerOpen = true;
-  }
+  const photoUrl = (bust = false) =>
+    `/-/api/user-profile/photo/${encodeURIComponent(profile.actor_id)}` +
+    (bust ? `?t=${Date.now()}` : "");
 
-  function onClickOutside(e: MouseEvent) {
-    if (pickerOpen && anchorEl && !anchorEl.contains(e.target as Node)) {
-      pickerOpen = false;
-    }
-  }
+  // Whether the server currently has a photo stored for this user
+  let hasPhoto = $state(profile.has_photo);
+  // The saved avatar, as shown on the page
+  let avatar = $state({
+    photoUrl: profile.has_photo ? photoUrl() : null,
+    icon: profile.avatar_icon ?? "",
+    color: profile.avatar_color ?? "",
+  });
+  let dialogOpen = $state(false);
 
-  function onKeydown(e: KeyboardEvent) {
-    if (e.key === "Escape" && pickerOpen) {
-      pickerOpen = false;
-    }
-  }
+  // Text fields as last saved, for the leave-page warning
+  let saved = $state({
+    displayName: profile.display_name ?? "",
+    bio: profile.bio ?? "",
+    email: profile.email ?? "",
+  });
+  const hasUnsavedChanges = $derived(
+    displayName !== saved.displayName || bio !== saved.bio || email !== saved.email,
+  );
 
   $effect(() => {
-    if (pickerOpen) {
-      document.addEventListener("click", onClickOutside, true);
-      document.addEventListener("keydown", onKeydown);
-      return () => {
-        document.removeEventListener("click", onClickOutside, true);
-        document.removeEventListener("keydown", onKeydown);
-      };
-    }
+    if (!hasUnsavedChanges) return;
+    success = null;
+    // Browsers show their own generic "leave site?" prompt; custom text is ignored
+    const onBeforeUnload = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
   });
-
-  function makeIconSvg(name: string, color: string, size: number = 40): string {
-    const inner = iconSvgs[name];
-    if (!inner || !color) return "";
-    const iconSize = size * 0.5625;
-    const offset = (size - iconSize) / 2;
-    const scale = iconSize / 16;
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><circle cx="${size / 2}" cy="${size / 2}" r="${size / 2}" fill="${color}"/><g transform="translate(${offset.toFixed(1)},${offset.toFixed(1)}) scale(${scale.toFixed(4)})" fill="white">${inner}</g></svg>`;
-  }
-
-  let hasPhoto = $state(profile.has_photo);
-  let selectedFile: File | null = $state(null);
-  let photoPreview: string | null = $state(
-    profile.has_photo
-      ? `/-/api/user-profile/photo/${encodeURIComponent(profile.actor_id)}`
-      : null,
-  );
-  let photoError: string | null = $state(null);
 
   function readFileAsBase64(file: File): Promise<string> {
     return new Promise((resolve, reject) => {
@@ -95,77 +73,54 @@
     });
   }
 
-  function handleImageFile(file: File) {
-    if (!canEditAvatar) return;
-    if (!file.type.startsWith("image/")) {
-      photoError = "Please select an image file";
-      return;
-    }
-    if (file.size > 1048576) {
-      const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
-      photoError = `Image must be under 1MB (yours is ${sizeMB}MB)`;
-      return;
-    }
-    selectedFile = file;
-    photoError = null;
-    const reader = new FileReader();
-    reader.onload = () => {
-      photoPreview = reader.result as string;
-    };
-    reader.readAsDataURL(file);
+  function apiError(data: any, err: any, fallback: string): string | null {
+    if (err) return err.error ?? fallback;
+    if (data && !data.ok) return data.error ?? fallback;
+    return null;
   }
 
-  function onFileInput(e: Event) {
-    const input = e.currentTarget as HTMLInputElement;
-    const file = input.files?.[0];
-    if (file) handleImageFile(file);
-  }
+  // Called by the picture dialog's Save; returns an error message or null
+  async function saveAvatar(draft: AvatarDraft): Promise<string | null> {
+    if (draft.file) {
+      const base64 = await readFileAsBase64(draft.file);
+      const { data, error: err } = await client.POST("/-/api/user-profile/photo", {
+        body: {
+          photo_data: base64,
+          content_type: draft.file.type || "image/jpeg",
+        } as any,
+      });
+      const msg = apiError(data, err, "Photo upload failed");
+      if (msg) return msg;
+      hasPhoto = true;
+    } else if (hasPhoto && !draft.photoUrl) {
+      const { data, error: err } = await client.POST(
+        "/-/api/user-profile/photo/delete" as any,
+        { body: {} },
+      );
+      const msg = apiError(data, err, "Couldn't remove photo");
+      if (msg) return msg;
+      hasPhoto = false;
+    }
 
-  function onPaste(e: ClipboardEvent) {
-    const items = e.clipboardData?.items;
-    if (!items) return;
-    for (const item of items) {
-      if (item.type.startsWith("image/")) {
-        e.preventDefault();
-        const file = item.getAsFile();
-        if (file) handleImageFile(file);
-        return;
+    if (draft.icon !== avatar.icon || draft.color !== avatar.color) {
+      const { data, error: err } = await client.POST("/-/api/user-profile/update", {
+        body: { avatar_icon: draft.icon || null, avatar_color: draft.color || null } as any,
+      });
+      const msg = apiError(data, err, "Save failed");
+      if (msg) {
+        // A new photo may already be stored; reflect that even though the
+        // icon change failed
+        avatar.photoUrl = hasPhoto ? photoUrl(true) : null;
+        return msg;
       }
     }
-  }
 
-  let dragging = $state(false);
-
-  function onDrop(e: DragEvent) {
-    e.preventDefault();
-    dragging = false;
-    const file = e.dataTransfer?.files[0];
-    if (file) handleImageFile(file);
-  }
-
-  function onDragOver(e: DragEvent) {
-    e.preventDefault();
-    dragging = true;
-  }
-
-  function onDragLeave(e: DragEvent) {
-    e.preventDefault();
-    dragging = false;
-  }
-
-  async function deletePhoto() {
-    saving = true;
-    photoError = null;
-    try {
-      await client.POST("/-/api/user-profile/photo/delete" as any, { body: {} });
-      hasPhoto = false;
-      photoPreview = null;
-      selectedFile = null;
-    } catch (e: any) {
-      photoError = e.message;
-    } finally {
-      saving = false;
-    }
+    avatar = {
+      photoUrl: hasPhoto ? photoUrl(true) : null,
+      icon: draft.icon,
+      color: draft.color,
+    };
+    return null;
   }
 
   async function handleSubmit(e: Event) {
@@ -173,54 +128,17 @@
     saving = true;
     error = null;
     success = null;
-    photoError = null;
     try {
-      // Upload photo if a new one was selected
-      if (selectedFile) {
-        const base64 = await readFileAsBase64(selectedFile);
-        const { data: photoData, error: photoApiError } = await client.POST(
-          "/-/api/user-profile/photo",
-          {
-            body: {
-              photo_data: base64,
-              content_type: selectedFile.type || "image/jpeg",
-            } as any,
-          },
-        );
-        if (photoApiError) {
-          error = (photoApiError as any).error ?? "Photo upload failed";
-          return;
-        }
-        if (photoData && !(photoData as any).ok) {
-          error = (photoData as any).error ?? "Photo upload failed";
-          return;
-        }
-        hasPhoto = true;
-        selectedFile = null;
-        photoPreview = `/-/api/user-profile/photo/${encodeURIComponent(profile.actor_id)}?t=${Date.now()}`;
-      }
-
-      // Save profile fields
-      const { data, error: apiError } = await client.POST(
-        "/-/api/user-profile/update",
-        {
-          body: {
-            display_name: displayName || null,
-            bio: bio || null,
-            email: email || null,
-            avatar_icon: avatarIcon || null,
-            avatar_color: avatarColor || null,
-          } as any,
-        },
-      );
-      if (apiError) {
-        error = (apiError as any).error ?? "Save failed";
-        return;
-      }
-      if (data && !(data as any).ok) {
-        error = (data as any).error ?? "Save failed";
-        return;
-      }
+      const { data, error: err } = await client.POST("/-/api/user-profile/update", {
+        body: {
+          display_name: displayName || null,
+          bio: bio || null,
+          email: email || null,
+        } as any,
+      });
+      error = apiError(data, err, "Save failed");
+      if (error) return;
+      saved = { displayName, bio, email };
       success = "Profile saved";
     } catch (e: any) {
       error = e.message;
@@ -233,111 +151,67 @@
 <main>
   <h1>Edit Profile</h1>
 
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <section
-    class="photo-section"
-    class:dragging
-    onpaste={onPaste}
-    ondrop={onDrop}
-    ondragover={onDragOver}
-    ondragleave={onDragLeave}
-  >
-    <div class="photo-section-inner">
-      <div class="photo-info">
-        <h2>Profile Photo</h2>
-        {#if canEditAvatar}
-          <p class="hint">Drag/drop, or paste an image.<br/>1MB max, JPG, PNG, or GIF</p>
-          <div class="photo-actions">
-            <label class="file-btn">
-              {hasPhoto || selectedFile ? "Change photo" : "Upload photo"}
-              <input type="file" accept="image/*" onchange={onFileInput} hidden />
-            </label>
-            {#if selectedFile}
-              <button
-                type="button"
-                onclick={() => { selectedFile = null; photoPreview = hasPhoto ? `/-/api/user-profile/photo/${encodeURIComponent(profile.actor_id)}` : null; }}
-                class="clear-btn"
-              >
-                Undo
-              </button>
-            {/if}
-          </div>
-        {:else}
-          <p class="hint">Avatar is managed elsewhere and can't be changed here.</p>
-        {/if}
-      </div>
-      <div class="photo-preview-area">
-        <div class="avatar-anchor" bind:this={anchorEl}>
-          {#if photoPreview}
-            <img src={photoPreview} alt="{profile.display_name || profile.actor_id}" class="photo-preview" />
-          {:else if avatarIcon && avatarColor}
-            <div class="avatar-icon-preview">
-              {@html makeIconSvg(avatarIcon, avatarColor, 80)}
-            </div>
-          {:else}
-            <div class="photo-placeholder">
-              {(profile.display_name || profile.actor_id).charAt(0).toUpperCase()}
-            </div>
-          {/if}
-
-          {#if pickerOpen}
-            <div class="icon-picker-popover">
-              <div class="icon-grid">
-                {#each iconChoices as name}
-                  <button
-                    type="button"
-                    class="icon-btn"
-                    class:selected={avatarIcon === name}
-                    onclick={() => { avatarIcon = name; if (!avatarColor) avatarColor = colorEntries[0]?.[1] ?? ""; }}
-                    title={name}
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 16 16" fill="currentColor">
-                      {@html iconSvgs[name]}
-                    </svg>
-                  </button>
-                {/each}
-              </div>
-
-              <div class="color-row">
-                {#each colorEntries as [name, hex]}
-                  <button
-                    type="button"
-                    class="color-btn"
-                    class:selected={avatarColor === hex}
-                    style="background: {hex};"
-                    onclick={() => { avatarColor = hex; if (!avatarIcon) avatarIcon = iconChoices[0] ?? ""; }}
-                    title={name}
-                  ></button>
-                {/each}
-              </div>
-
-              {#if avatarIcon || avatarColor}
-                <div class="picker-footer">
-                  <button type="button" class="clear-icon-btn" onclick={() => { avatarIcon = ""; avatarColor = ""; pickerOpen = false; }}>
-                    Clear
-                  </button>
-                </div>
-              {/if}
-            </div>
-          {/if}
-        </div>
-        {#if canEditAvatar}
-          <div class="below-avatar">
-            {#if hasPhoto && !selectedFile}
-              <button type="button" onclick={deletePhoto} disabled={saving} class="remove-btn">Remove</button>
-            {/if}
-            <button type="button" class="icon-picker-toggle" onclick={openPicker}>
-              {avatarIcon ? "Change icon" : "Choose icon"}
-            </button>
-          </div>
-        {/if}
-      </div>
-    </div>
-
-    {#if photoError}
-      <p class="error">{photoError}</p>
+  <section class="photo-section">
+    {#if canEditAvatar}
+      <button
+        type="button"
+        class="avatar-btn"
+        onclick={() => (dialogOpen = true)}
+        aria-label="Change profile picture"
+      >
+        <AvatarPreview
+          photoUrl={avatar.photoUrl}
+          icon={avatar.icon}
+          color={avatar.color}
+          {iconSvgs}
+          {letter}
+        />
+        <span class="edit-badge" aria-hidden="true">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+            <path
+              d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293zm-9.761 5.175-.106.106-1.528 3.821 3.821-1.528.106-.106A.5.5 0 0 1 5 12.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.468-.325"
+            />
+          </svg>
+        </span>
+      </button>
+    {:else}
+      <AvatarPreview
+        photoUrl={avatar.photoUrl}
+        icon={avatar.icon}
+        color={avatar.color}
+        {iconSvgs}
+        {letter}
+      />
     {/if}
+    <div class="identity">
+      <div class="name">{saved.displayName || profile.actor_id}</div>
+      {#if canEditAvatar}
+        <button type="button" class="link-btn" onclick={() => (dialogOpen = true)}>
+          Change picture
+        </button>
+      {:else}
+        <p class="hint">Picture is managed elsewhere</p>
+      {/if}
+    </div>
   </section>
+
+  {#if dialogOpen}
+    <AvatarDialog
+      initial={{
+        ...$state.snapshot(avatar),
+        file: null,
+        originalFile: null,
+        sizeNote: null,
+        sourceWarning: null,
+      }}
+      {iconChoices}
+      {colorChoices}
+      {iconSvgs}
+      {letter}
+      onsave={saveAvatar}
+      onclose={() => (dialogOpen = false)}
+    />
+  {/if}
 
   <form onsubmit={handleSubmit}>
     <label for="display-name">
@@ -376,7 +250,7 @@
       disabled={!canEdit("email")}
     />
 
-    <button type="submit" disabled={saving}>
+    <button type="submit" disabled={saving || !hasUnsavedChanges}>
       {saving ? "Saving..." : "Save Profile"}
     </button>
   </form>
@@ -400,201 +274,73 @@
     max-width: 500px;
     margin: 2rem auto;
   }
-  h2 {
-    font-size: 1.1rem;
-    margin: 0 0 0.5rem;
-  }
   .photo-section {
-    margin-bottom: 2rem;
-    padding: 1.25rem;
-    background: #f9f9f9;
-    border-radius: 8px;
-    border: 2px solid transparent;
-    transition: border-color 0.15s, background 0.15s;
-  }
-  .photo-section.dragging {
-    border-color: #4a90d9;
-    background: #f0f7ff;
-  }
-  .photo-section-inner {
     display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 1.5rem;
-  }
-  .photo-info {
-    flex: 1;
-  }
-  .photo-preview-area {
-    display: flex;
-    flex-direction: column;
     align-items: center;
-    gap: 0.4rem;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+  .avatar-btn {
+    position: relative;
+    padding: 0;
+    border: none;
+    background: none;
+    border-radius: 50%;
+    cursor: pointer;
     flex-shrink: 0;
   }
-  .photo-preview {
-    width: 80px;
-    height: 80px;
-    border-radius: 50%;
-    object-fit: cover;
+  .avatar-btn:hover :global(.avatar) {
+    filter: brightness(0.9);
   }
-  .avatar-icon-preview :global(svg) {
-    border-radius: 50%;
-    display: block;
+  .avatar-btn:focus-visible {
+    outline: 2px solid #4a90d9;
+    outline-offset: 3px;
   }
-  .photo-placeholder {
-    width: 80px;
-    height: 80px;
+  .edit-badge {
+    position: absolute;
+    right: -2px;
+    bottom: -2px;
+    width: 28px;
+    height: 28px;
     border-radius: 50%;
-    background: #e0e0e0;
+    background: white;
+    border: 1px solid #ddd;
+    color: #444;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 2rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  }
+  .avatar-btn:hover .edit-badge {
+    color: #111;
+    border-color: #bbb;
+  }
+  .identity {
+    min-width: 0;
+  }
+  .name {
+    font-size: 1.15rem;
     font-weight: 600;
-    color: #666;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
-  .below-avatar {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.15rem;
-  }
-  .photo-actions {
-    display: flex;
-    gap: 0.5rem;
-    margin-top: 0.75rem;
-  }
-  .file-btn {
-    padding: 0.3rem 0.8rem;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-    background: white;
-    cursor: pointer;
-    font-size: 0.85rem;
-  }
-  .file-btn:hover {
-    background: #eee;
-  }
-  .clear-btn {
-    padding: 0.3rem 0.8rem;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-    background: white;
-    cursor: pointer;
-    font-size: 0.85rem;
-    color: #666;
-  }
-  .clear-btn:hover {
-    background: #eee;
-  }
-  .remove-btn {
-    font-size: 0.75rem;
-    color: #c00;
-    background: none;
-    border: none;
-    cursor: pointer;
+  .link-btn {
+    margin-top: 0.15rem;
     padding: 0;
-  }
-  .remove-btn:hover {
-    text-decoration: underline;
-  }
-  .icon-picker-toggle {
-    font-size: 0.75rem;
+    border: none;
+    background: none;
     color: #4a90d9;
-    background: none;
-    border: none;
+    font-size: 0.85rem;
     cursor: pointer;
-    padding: 0;
   }
-  .icon-picker-toggle:hover {
+  .link-btn:hover {
     text-decoration: underline;
   }
   .hint {
     font-size: 0.8rem;
     color: #888;
-    margin: 0.25rem 0 0;
-    line-height: 1.4;
-  }
-
-  .avatar-anchor {
-    position: relative;
-  }
-  .icon-picker-popover {
-    position: absolute;
-    top: calc(100% + 0.5rem);
-    right: 50%;
-    transform: translateX(50%);
-    background: white;
-    border: 1px solid #ddd;
-    border-radius: 8px;
-    padding: 0.75rem;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-    z-index: 10;
-    width: max-content;
-  }
-  .icon-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 36px);
-    gap: 4px;
-    margin-bottom: 0.75rem;
-  }
-  .icon-btn {
-    width: 36px;
-    height: 36px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border: 2px solid transparent;
-    border-radius: 6px;
-    background: white;
-    cursor: pointer;
-    color: #555;
-    padding: 0;
-  }
-  .icon-btn:hover {
-    background: #eee;
-  }
-  .icon-btn.selected {
-    border-color: #333;
-    background: #e8e8e8;
-  }
-  .color-row {
-    display: grid;
-    grid-template-columns: repeat(4, 28px);
-    gap: 4px;
-    justify-content: center;
-  }
-  .color-btn {
-    width: 28px;
-    height: 28px;
-    border: 2px solid transparent;
-    border-radius: 50%;
-    cursor: pointer;
-    padding: 0;
-  }
-  .color-btn:hover {
-    opacity: 0.8;
-  }
-  .color-btn.selected {
-    border-color: #333;
-    box-shadow: 0 0 0 2px white, 0 0 0 4px #333;
-  }
-  .picker-footer {
-    display: flex;
-    justify-content: flex-end;
-    margin-top: 0.4rem;
-  }
-  .clear-icon-btn {
-    font-size: 0.75rem;
-    color: #c00;
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 0;
-  }
-  .clear-icon-btn:hover {
-    text-decoration: underline;
+    margin: 0.15rem 0 0;
   }
 
   form {

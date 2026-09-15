@@ -40,7 +40,8 @@ async def api_update_profile(
     internal_db = datasette.get_internal_database()
     editable = editable_fields(datasette)
 
-    # Locked fields keep whatever is already stored; users can't change them.
+    # Locked fields and fields omitted from the request keep whatever is
+    # already stored. An explicit null clears a field.
     existing = (
         await internal_db.execute(
             "SELECT display_name, bio, email, avatar_icon, avatar_color"
@@ -48,17 +49,19 @@ async def api_update_profile(
             [actor_id],
         )
     ).first()
+    submitted_fields = body.model_fields_set
 
-    def pick(field, submitted, current_key=None):
-        if editable[field]:
-            return submitted
-        return existing[current_key or field] if existing else None
+    def pick(field, key=None):
+        key = key or field
+        if editable[field] and key in submitted_fields:
+            return getattr(body, key)
+        return existing[key] if existing else None
 
-    display_name = pick("display_name", body.display_name)
-    bio = pick("bio", body.bio)
-    email = pick("email", body.email)
-    avatar_icon = pick("avatar", body.avatar_icon, "avatar_icon")
-    avatar_color = pick("avatar", body.avatar_color, "avatar_color")
+    display_name = pick("display_name")
+    bio = pick("bio")
+    email = pick("email")
+    avatar_icon = pick("avatar", "avatar_icon")
+    avatar_color = pick("avatar", "avatar_color")
 
     def write(conn):
         with conn:
