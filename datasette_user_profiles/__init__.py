@@ -6,6 +6,7 @@ from datasette.plugins import pm
 from datasette_vite import vite_entry
 
 from . import hookspecs
+from .avatar import avatar_url
 
 pm.add_hookspecs(hookspecs)
 
@@ -30,8 +31,13 @@ async def resolve_profile_actors(datasette, actor_ids):
             "display_name": "Alice Anderson",
             "email": "alice@example.com",
             "kind": "user",
-            "avatar_url": "/-/profile/pic/alice",
+            "avatar_url": "/-/profile/pic/alice?v=2026-05-20T00:00:00.000",
+            "bio": "Builds things.",
         }
+
+    ``avatar_url`` is ``None`` when the user has no photo and no valid icon
+    avatar (so the URL would 404). Otherwise it carries a ``?v=`` version
+    stamp that changes whenever the picture does, so it is safe to cache.
 
     This plugin deliberately does **not** implement Datasette's core
     ``actors_from_ids`` plugin hook. That hook is ``firstresult=True``, so any
@@ -58,9 +64,12 @@ async def resolve_profile_actors(datasette, actor_ids):
     internal_db = datasette.get_internal_database()
     rows = (
         await internal_db.execute(
-            "select actor_id, display_name, email"
-            " from datasette_user_profiles"
-            " where actor_id in (select value from json_each(:ids))",
+            "select p.actor_id, p.display_name, p.email, p.bio,"
+            " p.avatar_icon, p.avatar_color, p.updated_at,"
+            " ph.updated_at as photo_updated_at"
+            " from datasette_user_profiles p"
+            " left join datasette_user_profile_photos ph on ph.actor_id = p.actor_id"
+            " where p.actor_id in (select value from json_each(:ids))",
             {"ids": json.dumps(ids)},
         )
     ).rows
@@ -72,9 +81,28 @@ async def resolve_profile_actors(datasette, actor_ids):
             "display_name": r["display_name"],
             "email": r["email"],
             "kind": "user",
-            "avatar_url": datasette.urls.path(f"/-/profile/pic/{actor_id}"),
+            "avatar_url": avatar_url(
+                datasette,
+                actor_id,
+                photo_updated_at=r["photo_updated_at"],
+                avatar_icon=r["avatar_icon"],
+                avatar_color=r["avatar_color"],
+                profile_updated_at=r["updated_at"],
+            ),
+            "bio": r["bio"],
         }
     return result
+
+
+def hovercard_script_url(datasette) -> str:
+    """URL of the profile hovercard script, for server-rendered templates::
+
+        <script type="module" src="{{ hovercard_script_url }}"></script>
+
+    It redirects to the built (or Vite dev server) module, and honours
+    ``base_url``.
+    """
+    return datasette.urls.path("/-/profiles/hovercard.js")
 
 
 # Import route modules to trigger route registration on the shared router.

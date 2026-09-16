@@ -215,7 +215,8 @@ async def test_seeded_profiles_resolve_via_helper():
     actors = await resolve_profile_actors(ds, ["ada", "ghost"])
     assert "ghost" not in actors
     assert actors["ada"]["display_name"] == "Ada Lovelace"
-    assert actors["ada"]["avatar_url"].endswith("/-/profile/pic/ada")
+    # Seeded without a photo or icon, so there's no avatar to point at.
+    assert actors["ada"]["avatar_url"] is None
 
 
 @pytest.mark.asyncio

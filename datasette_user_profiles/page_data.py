@@ -86,7 +86,9 @@ class SearchResult(BaseModel):
     id: str
     display_name: str | None = None
     email: str | None = None
-    avatar_url: str
+    # None when there's no photo or valid icon avatar; otherwise versioned
+    # with ?v= so it can be cached.
+    avatar_url: str | None = None
     kind: str = "user"
 
 
@@ -98,6 +100,17 @@ class ResolveResponse(BaseModel):
     # Keyed by actor id. Unknown ids are omitted, so callers apply their own
     # fallback for anything still unresolved (mirrors resolve_profile_actors).
     results: dict[str, SearchResult] = {}
+
+
+class ProfileCard(BaseModel):
+    model_config = ConfigDict(coerce_numbers_to_str=True)
+
+    id: str
+    name: str  # profile display_name → actors_from_ids display_name/name/username → id
+    bio: str | None = None
+    avatar_url: str | None = None  # null → client draws a grey initial
+    profile_url: str  # datasette.urls.path(...), base_url-aware
+    has_profile: bool
 
 
 __exports__ = [

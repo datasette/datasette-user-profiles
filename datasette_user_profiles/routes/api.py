@@ -1,12 +1,15 @@
 import base64
 from typing import Annotated
+from urllib.parse import unquote
 
 from datasette import Response
 from datasette_plugin_router import Body
 
+from ..avatar import avatar_url, quote_actor_id
 from ..config import editable_fields
 from ..page_data import (
     DeletePhotoResponse,
+    ProfileCard,
     ResolveResponse,
     SearchResponse,
     SearchResult,
@@ -190,6 +193,16 @@ def _truthy(value, default=True):
     return str(value).strip().lower() not in ("0", "false", "no", "off", "")
 
 
+# Selects only the photo's updated_at from the photos table, never the blob.
+_SEARCH_SELECT = (
+    "SELECT p.actor_id, p.display_name, p.email,"
+    " p.avatar_icon, p.avatar_color, p.updated_at,"
+    " ph.updated_at AS photo_updated_at"
+    " FROM datasette_user_profiles p"
+    " LEFT JOIN datasette_user_profile_photos ph ON ph.actor_id = p.actor_id"
+)
+
+
 @router.GET("/-/profiles/api/search$", output=SearchResponse)
 @check_permission()
 async def api_search(datasette, request):
@@ -211,10 +224,7 @@ async def api_search(datasette, request):
         # Empty query → most-recently-updated profiles (capped).
         rows = (
             await internal_db.execute(
-                "SELECT actor_id, display_name, email"
-                " FROM datasette_user_profiles"
-                " ORDER BY updated_at DESC"
-                " LIMIT ?",
+                f"{_SEARCH_SELECT} ORDER BY p.updated_at DESC LIMIT ?",
                 [limit],
             )
         ).rows
@@ -225,11 +235,10 @@ async def api_search(datasette, request):
         # matches on display_name first, then alphabetical by display_name.
         rows = (
             await internal_db.execute(
-                "SELECT actor_id, display_name, email"
-                " FROM datasette_user_profiles"
-                " WHERE display_name LIKE ? OR email LIKE ? OR actor_id LIKE ?"
-                " ORDER BY CASE WHEN display_name LIKE ? THEN 0 ELSE 1 END,"
-                " display_name"
+                f"{_SEARCH_SELECT}"
+                " WHERE p.display_name LIKE ? OR p.email LIKE ? OR p.actor_id LIKE ?"
+                " ORDER BY CASE WHEN p.display_name LIKE ? THEN 0 ELSE 1 END,"
+                " p.display_name"
                 " LIMIT ?",
                 [like, like, like, prefix, limit],
             )
@@ -240,7 +249,14 @@ async def api_search(datasette, request):
             id=row["actor_id"],
             display_name=row["display_name"],
             email=row["email"] if include_email else None,
-            avatar_url=datasette.urls.path(f"/-/profile/pic/{row['actor_id']}"),
+            avatar_url=avatar_url(
+                datasette,
+                row["actor_id"],
+                photo_updated_at=row["photo_updated_at"],
+                avatar_icon=row["avatar_icon"],
+                avatar_color=row["avatar_color"],
+                profile_updated_at=row["updated_at"],
+            ),
             kind="user",
         )
         for row in rows
@@ -279,6 +295,41 @@ async def api_resolve(datasette, request):
     }
 
     return Response.json(ResolveResponse(results=results).model_dump())
+
+
+@router.GET("/-/profiles/api/hovercard/(?P<actor_id>[^/]+)$", output=ProfileCard)
+@check_permission()
+async def api_hovercard(datasette, request, actor_id: str):
+    """Everything the profile hovercard shows for one actor.
+
+    Answers every id with a 200: the name falls back from the profile's
+    display_name to core ``actors_from_ids`` to the id itself, so the card
+    agrees with however the host page already named that actor.
+    """
+    actor_id = unquote(actor_id)
+    profile = (await resolve_profile_actors(datasette, [actor_id])).get(actor_id)
+
+    name = profile["display_name"] if profile else None
+    if not name:
+        actors = await datasette.actors_from_ids([actor_id])
+        actor = actors.get(actor_id) or {}
+        # Same key order as datasette-paper's resolve_actor_profiles, so the
+        # card agrees with the mention chip it opened from.
+        name = actor.get("display_name") or actor.get("name") or actor.get("username")
+    if not name:
+        name = actor_id
+
+    card = ProfileCard(
+        id=actor_id,
+        name=name,
+        bio=profile["bio"] if profile else None,
+        avatar_url=profile["avatar_url"] if profile else None,
+        profile_url=datasette.urls.path(f"/-/profile/{quote_actor_id(actor_id)}"),
+        has_profile=profile is not None,
+    )
+    return Response.json(
+        card.model_dump(), headers={"Cache-Control": "private, max-age=60"}
+    )
 
 
 @router.GET("/-/api/user-profile/photo/(?P<actor_id>[^/]+)$")

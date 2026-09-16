@@ -60,6 +60,7 @@ export default defineConfig({
         profiles: "src/pages/profiles/index.ts",
         profile: "src/pages/profile/index.ts",
         edit_profile: "src/pages/edit_profile/index.ts",
+        hovercard: "src/hovercard/index.ts",
       },
     },
   },

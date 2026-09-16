@@ -96,12 +96,15 @@ are alphabetical by `display_name`. Response shape:
       "id": "alice",
       "display_name": "Alice Anderson",
       "email": "alice@example.com",
-      "avatar_url": "/-/profile/pic/alice",
+      "avatar_url": "/-/profile/pic/alice?v=2026-05-20T10:00:00.000",
       "kind": "user"
     }
   ]
 }
 ```
+
+`avatar_url` follows the same rules as in `resolve_profile_actors()` below:
+`null` when there's no picture to show.
 
 `kind` is always `"user"` — profiles only knows users. Callers that also want
 agents (or other identities) query those sources separately and merge
@@ -119,12 +122,21 @@ Known users resolve to:
   "display_name": "Alice Anderson",
   "email": "alice@example.com",
   "kind": "user",
-  "avatar_url": "/-/profile/pic/alice"
+  "avatar_url": "/-/profile/pic/alice?v=2026-05-20T10:00:00.000",
+  "bio": "Builds things."
 }
 ```
 
 IDs without a matching profile are omitted from the map — the caller decides
 how to fall back (typically a bare `{"id": <id>}`).
+
+`avatar_url` is **nullable**: it's `null` when the user has neither an uploaded
+photo nor a valid icon avatar, i.e. exactly when `/-/profile/pic/<id>` would
+404, so you can render your own fallback instead of a broken image. Otherwise
+it carries a `?v=` version stamp that changes whenever the picture does (photo
+uploaded, replaced or removed, icon changed), so it's safe to cache. The same
+rules apply to `/-/profiles/api/search` and `/-/profiles/api/resolve`. `bio`
+may also be `null`.
 
 ### Consolidation note
 
@@ -160,11 +172,14 @@ from datasette_user_profiles import resolve_profile_actors
 actors = await resolve_profile_actors(datasette, ["alice", "agent-1"])
 # {"alice": {"id": "alice", "display_name": "Alice Anderson",
 #            "email": "alice@example.com", "kind": "user",
-#            "avatar_url": "/-/profile/pic/alice"}}
+#            "avatar_url": "/-/profile/pic/alice?v=2026-05-20T10:00:00.000",
+#            "bio": "Builds things."}}
 ```
 
 It returns a `{actor_id: {...}}` map for the IDs that have a profile, and omits
 the rest so you can merge it with other sources and apply your own fallback.
+`avatar_url` is `null` when there's no picture to show, and versioned with
+`?v=` otherwise (see the output shape above).
 
 If you want profiles to back Datasette's core `actors_from_ids`, wire it up
 from a plugin you control — designating a single owner for the hook and
@@ -184,6 +199,73 @@ def actors_from_ids(datasette, actor_ids):
         return actors
     return inner
 ```
+
+## Profile hovercards
+
+Any plugin can show a small profile card (avatar, name, `@id`, bio, a link to
+the full profile) when someone hovers or keyboard-focuses a person's name:
+
+<p align="center"><img src="docs/screenshots/hovercard.png" alt="A comment thread from a host plugin. Hovering the @grace mention in the first comment has opened a profile card overlaying the thread, showing Grace Hopper's lightning-bolt avatar, her name, @grace, her bio, and a View profile link." width="800"></p>
+
+Load one script and mark the elements:
+
+```html
+<a href="/-/profile/alice" data-profile-hovercard>Alice</a>        <!-- id from href -->
+<span class="mention" data-profile-hovercard="alice">@Alice</span> <!-- explicit id -->
+
+<script type="module" src="/-/profiles/hovercard.js"></script>
+```
+
+In server-rendered templates, use the `base_url`-aware helper:
+
+```python
+from datasette_user_profiles import hovercard_script_url
+
+@hookimpl
+def extra_template_vars(datasette):
+    return {"profile_hovercard_script_url": hovercard_script_url(datasette)}
+```
+
+- The card opens after 500 ms of hover, or on `:focus-visible` focus, and
+  closes 300 ms after the pointer leaves both the trigger and the card. Touch
+  is ignored, so a tap just follows the link.
+- Any key press closes an open card. Escape is also claimed
+  (`preventDefault` + `stopPropagation`) while a card is open, and never
+  touched while it isn't.
+- Elements that can't take focus (e.g. atoms in a `contenteditable` editor)
+  can open and close the card programmatically:
+
+  ```js
+  mentionEl.dispatchEvent(new CustomEvent("profile-hovercard:open", { bubbles: true }));
+  document.dispatchEvent(new CustomEvent("profile-hovercard:close"));
+  ```
+- Ids without a profile still get a card, named through core
+  `actors_from_ids`, marked "No profile yet". Viewers without `profile_access`
+  never see a card; the link still works.
+- Drop any `title` attribute from triggers, or the native tooltip competes
+  with the card.
+
+The data comes from `GET /-/profiles/api/hovercard/<actor_id>`, which returns
+`{id, name, bio, avatar_url, profile_url, has_profile}`.
+
+### Theming
+
+The card follows the host page's `color-scheme` (not `prefers-color-scheme`).
+Map your palette onto its custom properties once:
+
+```css
+:root {
+  --profile-hovercard-bg: var(--pp-bg);
+  --profile-hovercard-fg: var(--pp-fg);
+  --profile-hovercard-muted: var(--pp-fg-muted);
+  --profile-hovercard-border: var(--pp-border);
+  --profile-hovercard-accent: var(--pp-accent);
+}
+```
+
+`--profile-hovercard-radius`, `-shadow` and `-font` are also available, and
+`profile-hovercard::part(card | avatar | name | handle | bio | footer)` reaches
+anything deeper. `just dev` serves a demo at `/-/profiles/hovercard-demo`.
 
 ## Seeding profiles from other plugins
 
