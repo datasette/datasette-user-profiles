@@ -15,7 +15,28 @@ datasette install datasette-user-profiles
 ```
 ## Usage
 
-Usage instructions go here.
+The plugin adds three pages, all gated behind the `profile_access` permission:
+a directory at `/-/profiles/`, a public profile at `/-/profile/<actor_id>`, and
+an edit page at `/-/user-profile/edit`.
+
+The directory lists everyone who has a profile. Avatars are an uploaded photo,
+a generated icon-and-colour pair, or a letter placeholder when there's neither:
+
+<p align="center"><img src="docs/screenshots/profiles.png" alt="The profiles directory: six people listed as cards, each with an avatar, display name, @id and the first line of their bio. Ada Lovelace has an uploaded photo, four others have generated icon avatars in different colours, and Tim Berners-Lee falls back to a grey circle with the letter T." width="800"></p>
+
+Each person gets a public profile page with their picture, name, bio and email.
+Viewing your own adds an "Edit profile" button:
+
+<p align="center"><img src="docs/screenshots/profile.png" alt="Ada Lovelace's profile page: a large round avatar, her name, @ada, a two-line bio, her email address as a link, and an Edit profile button in the top right." width="800"></p>
+
+The edit page is where people set their own display name, bio and email:
+
+<p align="center"><img src="docs/screenshots/edit-profile.png" alt="The Edit Profile page: the current avatar with a pencil badge and a Change picture link, then Display Name, Bio and Email form fields filled in with Ada Lovelace's details, and a Save Profile button." width="800"></p>
+
+"Change picture" opens a dialog for uploading and cropping a photo, or picking
+one of the built-in icons and a colour to generate an avatar from:
+
+<p align="center"><img src="docs/screenshots/avatar-dialog.png" alt="The Profile picture dialog on its Icon tab: a large avatar preview, Photo and Icon tabs, a grid of sixteen outline icons (eye, flame, flower, gem, heart, lightning, moon, music note, person, puzzle, rocket, shield, star, sun, tree, trophy), a row of eight colour swatches with purple selected, and Remove photo / Cancel / Save buttons." width="440"></p>
 
 ## Locking fields users can't edit
 
@@ -235,3 +256,26 @@ To run the tests:
 ```bash
 uv run pytest
 ```
+
+### Screenshots
+
+`docs/screenshots/*.png` (embedded above) are generated and committed, not
+hand-made. To regenerate them:
+
+```bash
+just shots                        # all shots
+just shots profile avatar-dialog  # a subset, by name
+```
+
+This builds the frontend, boots a throwaway Datasette on port 8495 with a fresh
+internal database and a dev-only plugin that seeds a deterministic demo cast
+(`frontend/scripts/shot-plugins/seed_profiles.py`, which goes through the
+public `datasette_user_profile_seeds` hook), drives headless Chromium, then
+tears the server down. Output is byte-identical run over run — timestamps are
+pinned, `Math.random` is stubbed and animations are disabled — so a re-run with
+no UI change produces no diff.
+
+It's a manual local task, **never run in CI**. Re-run it and confirm
+`git status` is clean before committing. To add a screenshot, drop one file in
+`frontend/scripts/shots/defs/<name>.mjs` (the filename is the shot id, asserted
+at load time); the harness it builds on lives in `frontend/scripts/shots/`.

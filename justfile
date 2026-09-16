@@ -78,3 +78,15 @@ dev-with-hmr *flags:
       just dev \
         -s plugins.datasette-vite.dev_ports.datasette_user_profiles {{DEV_PORT}} \
         {{flags}}
+
+# Screenshots
+# Regenerate the committed doc screenshots in docs/screenshots/. Self-contained:
+# builds the frontend, boots a throwaway datasette with a seeded demo cast,
+# drives Playwright, then tears it down. NEVER run in CI — the PNGs are
+# committed, so re-run and confirm `git status` is clean before committing.
+# Subset by name: `just shots profile avatar-dialog`.
+shots *names:
+    just frontend
+    npm --prefix frontend install
+    npm --prefix frontend exec -- playwright install chromium
+    node frontend/scripts/screenshots.mjs {{names}}
