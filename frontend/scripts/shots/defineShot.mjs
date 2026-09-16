@@ -51,6 +51,13 @@ export function defineShot(desc) {
     const ctx = await browser.newContext({
       viewport: VIEWPORT,
       deviceScaleFactor: DEVICE_SCALE_FACTOR,
+      // STABILITY_CSS below is injected into the document, and a document
+      // stylesheet cannot reach inside a shadow root — so the hovercard's
+      // 120ms fade/slide would still be in flight when we captured it. The
+      // component already honours prefers-reduced-motion, and a media query
+      // does apply inside shadow roots, so ask for reduced motion at the
+      // context level and let the component's own escape hatch do the work.
+      reducedMotion: "reduce",
     });
     // Re-inject the stability stylesheet on every navigation (addStyleTag on a
     // single page wouldn't survive page.goto). The very first invocation (the

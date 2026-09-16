@@ -203,8 +203,11 @@ def actors_from_ids(datasette, actor_ids):
 ## Profile hovercards
 
 Any plugin can show a small profile card (avatar, name, `@id`, bio, a link to
-the full profile) when someone hovers or keyboard-focuses a person's name. Load
-one script and mark the elements:
+the full profile) when someone hovers or keyboard-focuses a person's name:
+
+<p align="center"><img src="docs/screenshots/hovercard.png" alt="A comment thread from a host plugin. Hovering the @grace mention in the first comment has opened a profile card overlaying the thread, showing Grace Hopper's lightning-bolt avatar, her name, @grace, her bio, and a View profile link." width="800"></p>
+
+Load one script and mark the elements:
 
 ```html
 <a href="/-/profile/alice" data-profile-hovercard>Alice</a>        <!-- id from href -->
